@@ -19,7 +19,7 @@
     "extensions": ["./src/extension.ts"]
   },
   "bin": {
-    "pi-communication": "./src/service/cli.mjs"
+    "pi-communication": "src/service/cli.mjs"
   },
   "scripts": {
     "test": "node --test tests/*.test.mjs",
