@@ -18,6 +18,14 @@ Inside interactive pi, run `/communication setup`, then `/communication check` a
 
 ## Development
 
+Version `0.1.2` is prepared for npm publication and includes a native TUI setup wizard; npm `0.1.1` still uses terminal handoff. To test the checkout without changing the installed package or loading duplicate commands:
+
+```sh
+pi --no-extensions --extension ./packages/communication/src/extension.ts
+```
+
+Run `/communication setup` in that session. Confirmation uses the normal communication configuration and may enable systemd startup; cancellation changes nothing, and neither path starts the bot. See the [development smoke test](packages/communication/README.md#development-smoke-test).
+
 Requires Node.js 22 or newer and an existing pi installation for integration checks.
 
 ```sh

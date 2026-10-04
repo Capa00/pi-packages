@@ -30,7 +30,7 @@ test("il package espone solo l'entry point pi esplicito", () => {
 });
 
 test("pi rimane una dipendenza peer, non una copia runtime bundled", () => {
-  for (const name of ["@earendil-works/pi-coding-agent", "typebox"]) {
+  for (const name of ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui", "typebox"]) {
     assert.equal(manifest.peerDependencies[name], "*");
     assert.equal(manifest.dependencies?.[name], undefined);
   }

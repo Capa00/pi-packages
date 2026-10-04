@@ -1,9 +1,14 @@
 import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerCommunicationCommands } from "./service/extension-commands.mjs";
+import * as terminalUI from "@earendil-works/pi-tui";
+import { showSetupForm } from "./service/setup-ui.mjs";
 
 /** Pi entry point: loading never starts a connection or service. */
 export default function communication(pi: ExtensionAPI): void {
-  registerCommunicationCommands(pi, { agentDirectory: getAgentDir() });
+  registerCommunicationCommands(pi, {
+    agentDirectory: getAgentDir(),
+    showForm: (ctx, current) => showSetupForm(ctx, current, terminalUI),
+  });
   pi.registerCommand("communication-status", {
     description: "Mostra lo stato del package comunicazione",
     handler: async (_args, ctx) => {

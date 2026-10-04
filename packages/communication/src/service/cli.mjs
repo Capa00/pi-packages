@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { resolve } from "node:path";
 import { loadConfiguration } from "../config/load.mjs";
+import { checkConfiguration, formatConfigurationCheck } from "../config/check.mjs";
 import { runService } from "./run.mjs";
 import { defaultConfigPath, interactiveSetup } from "./setup.mjs";
 import { serviceStatus, startBackground, stopBackground } from "./control.mjs";
@@ -59,12 +60,14 @@ if (args.length === 1 && ["--help", "-h"].includes(args[0])) {
     }
     if (command === "setup") {
       await interactiveSetup(configPath, setupDefaults);
+    } else if (command === "check") {
+      const result = await checkConfiguration(configPath);
+      console.log(formatConfigurationCheck(result));
+      if (result.state !== "valid") process.exitCode = 1;
     } else {
       const config = await loadConfiguration(configPath);
-      const unit = command === "check" || foreground ? undefined : await systemdStatus(config);
-      if (command === "check") {
-        console.log(`Configurazione valida. Contatti: ${config.directory.contacts.length}. Telegram non avviato.`);
-      } else if (command === "status") {
+      const unit = foreground ? undefined : await systemdStatus(config);
+      if (command === "status") {
         const status = await serviceStatus(config);
         const lock = status.state === "unmanaged-or-stale-lock" ? await inspectServiceLock(config.sessionsDirectory) : undefined;
         const lockText = lock?.state === "active" ? "Lock di un processo attivo verificato: non rimuoverlo." : lock?.state === "stale" ? "Lock residuo verificato: nessuna rimozione automatica; controllare prima di rimuoverlo manualmente." : "Lock presente: processo non gestito o lock residuo non identificabile. Verificare manualmente.";

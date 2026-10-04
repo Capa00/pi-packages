@@ -17,6 +17,16 @@ Publication, Git initialization, commits, pushes, and changes to the running ser
 - The production bot was not restarted or changed as part of the release checks.
 - End-to-end interactive pi terminal handoff still needs a live user smoke test; terminal handoff/restoration are covered by simulated unit tests and the child setup by PTY tests.
 
+## Prepared release: `0.1.2` (not yet published)
+
+- `/communication setup` now uses a native three-field pi TUI wizard with masked token input, review/confirmation, cancellation, and safe editing of existing configuration.
+- `/communication check` reports missing configuration and independent local errors; standalone setup retains its terminal prompts.
+- 127 local tests passed, including additional cancellation/control-paste/disposal and initial-save rollback cases. Package dry-run and `git diff --check` passed.
+- Real host extension loader verified the new `pi-tui` peer import and both command registrations in a temporary agent/work directory. Real TUI components passed split secret paste, Unicode/narrow-width rendering, confirmation, and cancellation checks without Telegram/model calls.
+- The user reported successful live testing of the setup and commands and authorized Git push and npm release preparation. Separate regular/fullscreen coverage was not recorded.
+- Version is now `0.1.2`. npm publication is a separate operation and has not been authorized or performed. Release preparation does not replace the installed extension or start/restart the bot.
+- Release preparation reran all 127 tests (no failures or skips), package dry-run, and whitespace checks. The extracted tarball CLI `--help` and local `pi install`/`pi list` passed in an isolated HOME/agent/work directory. The tarball contains 28 source/documentation/metadata files and no operational data.
+
 ## Before publication
 
 1. Confirm the npm account owns the `@capa00` scope and can publish publicly. An unauthenticated registry lookup can only show whether a package is already published, not reserve its name.
@@ -45,7 +55,7 @@ Do not publish the private workspace root. Publication makes the package public 
 In an isolated pi profile, verify:
 
 ```sh
-pi install npm:@capa00/pi-communication@0.1.1
+pi install npm:@capa00/pi-communication@0.1.2
 pi list
 ```
 

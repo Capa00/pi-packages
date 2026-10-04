@@ -50,7 +50,7 @@ test("setup rifiuta token, ID e percorsi invalidi prima di scrivere", async (t) 
 test("CLI check/status non aprono connessioni, setup richiede un terminale", async (t) => {
   const { values, path } = await fixture(t);
   await writeSetup(path, values);
-  for (const [command, message] of [["check", /Configurazione valida/], ["status", /Servizio fermo/]]) {
+  for (const [command, message] of [["check", /Configuration is valid/], ["status", /Servizio fermo/]]) {
     const result = spawnSync(process.execPath, [cli, command, "--config", path], { encoding: "utf8", timeout: 5000 });
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, message);

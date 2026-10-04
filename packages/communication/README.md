@@ -13,6 +13,8 @@ Telegram messaging, a multichannel contact directory, permission checks, and a p
 
 ## Installation
 
+**Version `0.1.2` is prepared, not yet published:** the native TUI wizard described below is available in this checkout, not in npm `0.1.1`. That release still uses the terminal handoff for setup. For a temporary checkout test without replacing the installed package, see [Development smoke test](#development-smoke-test).
+
 Install in pi:
 
 ```sh
@@ -29,9 +31,11 @@ Reload pi if necessary with `/reload`, then run:
 /communication stop
 ```
 
-These commands use the CLI already included in the installed package: **no repository clone, global CLI installation, or PATH setup is required**. The setup temporarily releases the terminal and accepts a pasted Telegram token with hidden input, outside the model conversation. Never paste tokens into the pi chat. Existing pi SDK, working directory, and agent directory are suggested when available; check the prompts before confirming.
+These commands are included in the package: **no repository clone, global CLI installation, or PATH setup is required**. Setup runs a native pi TUI wizard: hidden bot token, your name, and your positive numeric Telegram user ID (not `@username`), followed by a review with Confirm/Cancel. The token never enters the model conversation. Never paste tokens into the pi chat.
 
-Setup requires interactive terminal pi (not RPC/print mode), waits for the model to become idle, and never starts the bot. `/communication start` requests managed background startup: systemd when configured, otherwise the Linux manual background manager. On unsupported systems without a suitable manager it fails rather than tying the bot to the pi terminal. Other commands show CLI output without invoking the model or adding it to model context. Arguments other than the five action names are rejected; use the standalone CLI for alternate profiles.
+Technical paths are detected before asking for the token: the running pi SDK and current pi agent directory are used automatically. A new service workspace is created beside the configuration at `~/.pi/communication/workspace`, independent of pi's current working directory. An accessible existing workspace is preserved. If the host paths cannot be detected, setup fails before opening the form.
+
+Setup requires interactive terminal pi (not RPC/print mode), waits for the model to become idle, and never starts the bot. `/communication start` requests managed background startup: systemd when configured, otherwise the Linux manual background manager. On unsupported systems without a suitable manager it fails rather than tying the bot to the pi terminal. `check` reports local validation results directly; `start`, `status`, and `stop` invoke the included CLI. Their output does not invoke the model or enter model context. Arguments other than the five action names are rejected; use the standalone CLI for alternate profiles.
 
 The explicit manifest loads `src/extension.ts` without a TypeScript build. `/communication-status` remains a legacy capabilities command, not service health.
 
@@ -61,10 +65,22 @@ For direct administration from any installed package directory, invoke `node src
 
 ## Guided setup and commands
 
-All commands default to `~/.pi/communication/config.json`; use `--config /absolute/path/config.json` to select another profile.
+### In pi
+
+`/communication setup` requires TUI mode and waits for the model to become idle. Enter advances through the three fields; Esc or Ctrl+C cancels without saving. At review, use arrow keys and Enter to choose Confirm or Cancel.
+
+For an existing configuration, blank fields keep the saved values; the saved token is never loaded into the UI. Setup preserves the contact's stable identity, aliases, other endpoints, permissions, other contacts, and sessions. Ambiguous setup contacts, duplicate Telegram IDs, symlinks, unsafe file permissions, and changes made while the form is open are rejected rather than overwritten. Invalid configuration/contacts may require manual repair; use `/communication check` for diagnostics.
+
+Confirm creates or updates private configuration and contacts files (mode `600` on Unix). A new contact receives permission to interact, receive messages, and request confirmed sends, as stated in the review. On Linux, confirming a new setup also configures/enables automatic startup; existing setups ask about startup separately after saving. Setup never starts or restarts the bot, contacts Telegram, or imports the SDK. Startup failure is reported separately from saved configuration. If the service may be running, changed values require an explicit stop/start.
+
+`/communication check` distinguishes missing configuration, independent local errors, and valid configuration without displaying secrets or creating sessions. It checks SDK/path accessibility, not SDK importability, Telegram connectivity, or model credentials.
+
+### Standalone CLI
+
+All commands default to `~/.pi/communication/config.json`; use `--config /absolute/path/config.json` to select another profile. The standalone CLI retains its separate terminal prompts; it is not the native TUI wizard.
 
 - `setup`: interactive terminal only, hidden token input, explicit contact authorization. Creates external configuration and contacts with mode `600`, without overwriting existing files. On Linux, offers to create and enable a systemd user unit, **never starts it**. Does not contact Telegram or import the SDK. With existing configuration it offers only systemd setup.
-- `check`: validates files without printing secrets, connecting to Telegram, or creating sessions. It does not validate token connectivity or model credentials.
+- `check`: uses the same local validation as `/communication check`, without printing secrets, connecting to Telegram, or creating sessions. It does not validate token connectivity or model credentials.
 - `start`: uses the recognized systemd unit if present; otherwise runs in the foreground. `start --foreground` always forces foreground operation. Do not run two consumers for the same bot.
 - `start --background`: uses systemd when configured, otherwise Linux manual background management with `service.log` and `managed-service.json` beside the configuration. Manual background mode survives terminal closure, not reboot.
 - `status`: reports service management and lock state; not a Telegram/model health check.
@@ -205,7 +221,19 @@ npm test
 npm run check:packages
 ```
 
-Tests simulate SDK, Telegram, and systemd without real credentials or delivery. PTY setup tests isolate HOME and systemd commands; they require Linux, Python 3, and a usable user runtime directory, otherwise they are skipped.
+Tests simulate SDK, Telegram, and systemd without real credentials or delivery. Native wizard tests cover hidden input, split bracketed paste, validation, preservation of existing values, cancellation, and narrow widths. Editor/flow tests cover preflight, private files, preserved contacts/sessions, stale snapshots, rollback on write failure, and separate startup outcomes. PTY tests cover the standalone CLI setup, not the complete pi TUI; they isolate HOME and systemd commands and require Linux, Python 3, and a usable user runtime directory, otherwise they are skipped.
+
+### Development smoke test
+
+From the repository root, launch a temporary pi session with only this extension:
+
+```sh
+pi --no-extensions --extension ./packages/communication/src/extension.ts
+```
+
+This avoids loading both the installed npm extension and checkout commands. It does not replace or update the installed package. Inside pi, try `/communication setup`: cancel first, then review the three fields and confirmation. Keep the token in the wizard, never in chat. Setup uses the normal communication configuration; confirmation saves files and, for a new Linux setup, configures automatic startup, but does not start the bot. Do not confirm unless those changes are intended.
+
+Check keyboard navigation, masking, resizing, narrow widths, and return to the pi editor after cancellation/confirmation. Repeat setup to verify blank fields preserve saved values, then run `/communication check`. The user reported successful live testing of the setup and commands before preparing `0.1.2`; separate regular/fullscreen coverage was not recorded. Bot startup and messaging tests are separate explicit operations.
 
 See the repository's `RELEASING.md` for the release checklist. Install the package subdirectory in development, not the Git repository root.
 

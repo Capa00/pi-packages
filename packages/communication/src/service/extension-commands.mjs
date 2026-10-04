@@ -1,8 +1,10 @@
-import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runGuidedSetup } from "./setup-flow.mjs";
+import { checkConfiguration, formatConfigurationCheck } from "../config/check.mjs";
+import { defaultConfigPath } from "./setup.mjs";
 
 const cliPath = fileURLToPath(new URL("./cli.mjs", import.meta.url));
 export const commandUsage = "Usage: /communication setup|check|start|status|stop. Do not enter tokens in the pi chat; setup prompts privately in the terminal.";
@@ -41,21 +43,7 @@ export function hostSdkPath(entry = process.argv[1]) {
   return undefined;
 }
 
-export function runTerminalSetup(tui, args, { spawn = spawnSync, write = (text) => process.stdout.write(text) } = {}) {
-  tui.stop();
-  try {
-    write("\x1b[2J\x1b[H");
-    const result = spawn(process.execPath, args, { stdio: "inherit", shell: false });
-    return result.status ?? 1;
-  } finally {
-    // Remove setup input/output from the active display before resuming pi.
-    write("\x1b[2J\x1b[H");
-    tui.start();
-    tui.requestRender(true);
-  }
-}
-
-export function registerCommunicationCommands(pi, { agentDirectory, sdkModule = hostSdkPath(), terminalSetup = runTerminalSetup } = {}) {
+export function registerCommunicationCommands(pi, { agentDirectory, sdkModule = hostSdkPath(), showForm, setup = runGuidedSetup, check = checkConfiguration, configPath = defaultConfigPath() } = {}) {
   let busy = false;
   pi.registerCommand("communication", {
     description: "Configure and control the communication service",
@@ -70,7 +58,7 @@ export function registerCommunicationCommands(pi, { agentDirectory, sdkModule = 
       const args = commandArguments(action, { sdkModule, workingDirectory: ctx.cwd, agentDirectory });
       if (!args) { report(commandUsage, "warning"); return; }
       if (busy) { report("A communication command is already running.", "warning"); return; }
-      if (action === "setup" && (ctx.mode !== "tui" || !process.stdin.isTTY || !process.stdout.isTTY)) {
+      if (action === "setup" && ctx.mode !== "tui") {
         report("Setup requires the interactive pi terminal. No files or services were changed.", "warning");
         return;
       }
@@ -78,13 +66,11 @@ export function registerCommunicationCommands(pi, { agentDirectory, sdkModule = 
       try {
         if (action === "setup") {
           await ctx.waitForIdle();
-          const code = await ctx.ui.custom((tui, _theme, _keys, done) => {
-            let status = 1;
-            try { status = terminalSetup(tui, args); }
-            finally { done(status); }
-            return { render: () => [], invalidate: () => {} };
-          });
-          report(code === 0 ? "Setup finished. The bot was not started. Use /communication check, then /communication start." : "Setup did not complete. No bot was started.", code === 0 ? "info" : "error");
+          const result = await setup(ctx, { sdkModule, agentDirectory, configPath, showForm });
+          report(result.message, result.state === "error" ? "error" : result.warning ? "warning" : "info");
+        } else if (action === "check") {
+          const result = await check(configPath);
+          report(formatConfigurationCheck(result), result.state === "invalid" ? "error" : result.state === "missing" ? "warning" : "info");
         } else {
           const result = await pi.exec(process.execPath, args, { cwd: ctx.cwd, timeout: 45000 });
           report([result.stdout, result.stderr].filter(Boolean).join("\n").trim() || "Command completed.", result.code === 0 ? "info" : "error");

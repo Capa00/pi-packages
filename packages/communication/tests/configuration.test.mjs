@@ -18,7 +18,7 @@ function directory(contacts = [contact()]) { return validateDirectory({ version:
 async function fixture(t) {
   const path = await mkdtemp(join(tmpdir(), "pi-communication-"));
   t.after(() => rm(path, { recursive: true, force: true }));
-  const config = { version: 1, telegram: { botToken: "123:TEST_SECRET" }, contactsFile: "contacts.json", sessionsDirectory: "sessions" };
+  const config = { version: 1, telegram: { botToken: "123:TEST_SECRET" }, contactsFile: "contacts.json", sessionsDirectory: "sessions", pi: { sdkModule: new URL("../src/service/cli.mjs", import.meta.url).pathname, workingDirectory: path, agentDirectory: path } };
   const configFile = join(path, "config.json");
   await writeFile(configFile, JSON.stringify(config), { mode: 0o600 });
   await writeFile(join(path, "contacts.json"), JSON.stringify({ version: 1, contacts: [contact()] }));
@@ -125,7 +125,7 @@ test("CLI check valida senza mostrare segreti", async (t) => {
   const f = await fixture(t);
   const result = spawnSync(process.execPath, [new URL("../src/service/cli.mjs", import.meta.url).pathname, "check", "--config", f.configFile], { encoding: "utf8", timeout: 5000 });
   assert.equal(result.status, 0);
-  assert.match(result.stdout, /Contatti: 1/);
+  assert.match(result.stdout, /Contacts: 1/);
   assert.equal(result.stderr, "");
   assert.ok(!result.stdout.includes(f.config.telegram.botToken));
 });
