@@ -39,7 +39,7 @@ Tests use simulated Telegram and SDK implementations; they do not require real c
 
 ## Release preparation
 
-See [RELEASING.md](RELEASING.md). Version `0.1.0` is published on npm. Version `0.1.1` adds in-pi setup and service controls; publication is a separate step.
+See [RELEASING.md](RELEASING.md). Versions `0.1.0` and `0.1.1` are published on npm. Version `0.1.1` adds in-pi setup and service controls; its public npm installation and real pi extension loading have been verified in an isolated profile.
 
 ## License
 

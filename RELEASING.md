@@ -8,6 +8,15 @@ License: MIT, Copyright (c) 2026 Giuseppe Di Puglia Pugliese
 
 Publication, Git initialization, commits, pushes, and changes to the running service are separate operations requiring explicit approval.
 
+## Current release status
+
+- `0.1.0`: published on npm; source commit `bbc648e`.
+- `0.1.1`: published on npm; source commit `04a91e2`.
+- 104 local tests passed, including isolated PTY setup with hidden token input and host-default suggestions.
+- Public `pi install npm:@capa00/pi-communication@0.1.1` verified in an isolated HOME/agent/work directory. Only the communication package was installed; the real pi resource loader registered the commands without model or Telegram calls.
+- The production bot was not restarted or changed as part of the release checks.
+- End-to-end interactive pi terminal handoff still needs a live user smoke test; terminal handoff/restoration are covered by simulated unit tests and the child setup by PTY tests.
+
 ## Before publication
 
 1. Confirm the npm account owns the `@capa00` scope and can publish publicly. An unauthenticated registry lookup can only show whether a package is already published, not reserve its name.
