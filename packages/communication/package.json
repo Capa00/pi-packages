@@ -1,0 +1,33 @@
+{
+  "name": "@capa00/pi-communication",
+  "version": "0.1.0",
+  "description": "Telegram messaging, contact permissions, and a persistent communication service for pi.",
+  "license": "MIT",
+  "author": "Giuseppe Di Puglia Pugliese",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Capa00/pi-packages.git",
+    "directory": "packages/communication"
+  },
+  "homepage": "https://github.com/Capa00/pi-packages/tree/main/packages/communication#readme",
+  "bugs": { "url": "https://github.com/Capa00/pi-packages/issues" },
+  "publishConfig": { "access": "public" },
+  "type": "module",
+  "keywords": ["pi-package"],
+  "files": ["src", "README.md", "LICENSE"],
+  "pi": {
+    "extensions": ["./src/extension.ts"]
+  },
+  "bin": {
+    "pi-communication": "./src/service/cli.mjs"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "service": "node src/service/cli.mjs"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "engines": { "node": ">=22" }
+}

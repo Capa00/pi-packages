@@ -1,0 +1,12 @@
+{
+  "name": "pi-packages-workspace",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "pi-communication": "node packages/communication/src/service/cli.mjs",
+    "test": "npm run test --workspaces --if-present",
+    "check:packages": "npm pack --dry-run --workspaces"
+  },
+  "engines": { "node": ">=22" }
+}
