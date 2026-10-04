@@ -36,7 +36,7 @@ Do not publish the private workspace root. Publication makes the package public 
 In an isolated pi profile, verify:
 
 ```sh
-pi install npm:@capa00/pi-communication@0.1.0
+pi install npm:@capa00/pi-communication@0.1.1
 pi list
 ```
 

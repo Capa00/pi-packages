@@ -1,7 +1,9 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { registerCommunicationCommands } from "./service/extension-commands.mjs";
 
-/** Entry point pi: nessuna connessione o processo avviato durante il caricamento. */
+/** Pi entry point: loading never starts a connection or service. */
 export default function communication(pi: ExtensionAPI): void {
+  registerCommunicationCommands(pi, { agentDirectory: getAgentDir() });
   pi.registerCommand("communication-status", {
     description: "Mostra lo stato del package comunicazione",
     handler: async (_args, ctx) => {

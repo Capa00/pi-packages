@@ -27,7 +27,9 @@ Per avvio al boot senza login occorre linger: il setup ne verifica lo stato.
 check valida senza connessioni. start usa systemd se configurato, altrimenti il primo piano.
 --foreground forza il primo piano (Ctrl+C); --background usa systemd o gestione Linux manuale.
 stop non arresta processi non gestiti; non usa service.pid preesistenti.
-L'installazione con pi non avvia il servizio né garantisce il bin nel PATH.`;
+L'installazione con pi non avvia il servizio né garantisce il bin nel PATH.
+Setup suggestions: --sdk-module <path>, --working-directory <path>, --agent-directory <path>.
+These flags only suggest interactive defaults; they do not configure a running bot.`;
 
 if (args.length === 1 && ["--help", "-h"].includes(args[0])) {
   console.log(help);
@@ -41,10 +43,14 @@ if (args.length === 1 && ["--help", "-h"].includes(args[0])) {
     let background = false;
     let foreground = false;
     let configSeen = false;
+    const setupDefaults = {};
+    const setupFlags = { "--sdk-module": "sdkModule", "--working-directory": "workingDirectory", "--agent-directory": "agentDirectory" };
     for (let i = 1; i < args.length; i++) {
       if (args[i] === "--config" && !configSeen && args[i + 1] && !args[i + 1].startsWith("--")) {
         configPath = resolve(args[++i]);
         configSeen = true;
+      } else if (command === "setup" && setupFlags[args[i]] && !setupDefaults[setupFlags[args[i]]] && args[i + 1] && !args[i + 1].startsWith("--")) {
+        setupDefaults[setupFlags[args[i]]] = resolve(args[++i]);
       } else if (args[i] === "--background" && command === "start" && !background && !foreground) {
         background = true;
       } else if (args[i] === "--foreground" && command === "start" && !foreground && !background) {
@@ -52,7 +58,7 @@ if (args.length === 1 && ["--help", "-h"].includes(args[0])) {
       } else throw new Error("Argomenti non validi. Usa --help per informazioni.");
     }
     if (command === "setup") {
-      await interactiveSetup(configPath);
+      await interactiveSetup(configPath, setupDefaults);
     } else {
       const config = await loadConfiguration(configPath);
       const unit = command === "check" || foreground ? undefined : await systemdStatus(config);

@@ -92,9 +92,9 @@ if (linger) console.log('yes');
   return { home, sdk, unit, calls, path: join(home, ".pi/communication/config.json"), env, guard };
 }
 
-function runSetup(f, steps) {
+function runSetup(f, steps, additionalArgs = []) {
   const result = spawnSync("python3", ["-c", driver], {
-    input: JSON.stringify({ argv: [process.execPath, "--import", f.guard, cli, "setup"], env: f.env, cwd: f.home, steps }),
+    input: JSON.stringify({ argv: [process.execPath, "--import", f.guard, cli, "setup", ...additionalArgs], env: f.env, cwd: f.home, steps }),
     encoding: "utf8", timeout: 20000,
   });
   assert.equal(result.status, 0, result.stderr);
@@ -106,9 +106,9 @@ function runSetup(f, steps) {
 function firstSteps(f, confirmation = "sì") {
   return [
     ["Token BotFather (nascosto): ", "123456:PTY_PRIVATE_TOKEN"],
-    ["Entry point SDK pi (dist/index.js)", `\x1b[A${f.sdk}`], // Freccia su non deve recuperare il token.
-    ["Directory di lavoro", f.home],
-    ["Directory agente pi", f.home],
+    ["Pi SDK entry point (dist/index.js)", `\x1b[A${f.sdk}`], // Freccia su non deve recuperare il token.
+    ["Working directory", f.home],
+    ["Pi agent directory", f.home],
     ["ID interno contatto", "me"],
     ["Nome contatto", "Test User"],
     ["ID numerico utente Telegram", "123456789"],
@@ -136,6 +136,23 @@ test("setup completo da zero in PTY: token nascosto, file validi e unità abilit
   ]);
   assert.ok(await stat(join(f.home, ".config/systemd/user/default.target.wants/pi-communication.service")));
   await assert.rejects(stat(config.sessionsDirectory), { code: "ENOENT" });
+});
+
+test("extension setup suggestions can be accepted with hidden terminal input", async (t) => {
+  const f = await fixture(t); if (!f) return;
+  const steps = firstSteps(f).map(([prompt, answer]) => {
+    if (prompt === "Pi SDK entry point (dist/index.js)") return [`${prompt} [${f.sdk}]`, ""];
+    if (prompt === "Working directory" || prompt === "Pi agent directory") return [`${prompt} [${f.home}]`, ""];
+    return [prompt, answer];
+  });
+  const output = runSetup(f, steps, ["--sdk-module", f.sdk, "--working-directory", f.home, "--agent-directory", f.home]);
+  assert.ok(!output.includes("PTY_PRIVATE_TOKEN"));
+  const config = await loadConfiguration(f.path);
+  assert.equal(config.pi.sdkModule, f.sdk);
+  assert.equal(config.pi.workingDirectory, f.home);
+  assert.equal(config.pi.agentDirectory, f.home);
+  await assert.rejects(stat(config.sessionsDirectory), { code: "ENOENT" });
+  assert.equal((await recordedCalls(f)).length, 3);
 });
 
 test("annullamento interattivo non crea configurazione, rubrica o unità", async (t) => {

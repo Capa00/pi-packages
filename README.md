@@ -8,6 +8,14 @@ Independent packages for pi, organized by domain rather than technical component
 
 The workspace root is private and is not an installable aggregate pi package. Each domain has its own version and explicit `pi` manifest. Install the communication subdirectory locally; do not install the repository root as a pi package.
 
+## Installation
+
+```sh
+pi install npm:@capa00/pi-communication
+```
+
+Inside interactive pi, run `/communication setup`, then `/communication check` and `/communication start`. Setup accepts hidden token input in the terminal and never starts the bot. No clone is required. See the [package README](packages/communication/README.md) for requirements and operating limits.
+
 ## Development
 
 Requires Node.js 22 or newer and an existing pi installation for integration checks.
@@ -31,7 +39,7 @@ Tests use simulated Telegram and SDK implementations; they do not require real c
 
 ## Release preparation
 
-See [RELEASING.md](RELEASING.md). The initial npm release is being prepared; publication is a separate step.
+See [RELEASING.md](RELEASING.md). Version `0.1.0` is published on npm. Version `0.1.1` adds in-pi setup and service controls; publication is a separate step.
 
 ## License
 

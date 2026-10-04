@@ -2,7 +2,7 @@
 
 Telegram messaging, a multichannel contact directory, permission checks, and a persistent communication service for pi.
 
-**Initial release preparation.** Telegram conversations and sending to the requesting user's own contact have been tested live. Delivery to a second real user and boot-time startup after reboot still need live verification. Other channels are directory entries only, not implemented adapters. Some existing CLI and Telegram interface text is still in Italian.
+**Early release.** Telegram conversations and sending to the requesting user's own contact have been tested live. Delivery to a second real user and boot-time startup after reboot still need live verification. Other channels are directory entries only, not implemented adapters. Some existing CLI and Telegram interface text is still in Italian.
 
 ## Requirements
 
@@ -13,19 +13,33 @@ Telegram messaging, a multichannel contact directory, permission checks, and a p
 
 ## Installation
 
-Once published:
+Install in pi:
 
 ```sh
 pi install npm:@capa00/pi-communication
 ```
 
-Reload pi if necessary with `/reload`. The explicit manifest loads `src/extension.ts` without a TypeScript build. `/communication-status` describes package capabilities, not service health.
+Reload pi if necessary with `/reload`, then run:
+
+```text
+/communication setup
+/communication check
+/communication start
+/communication status
+/communication stop
+```
+
+These commands use the CLI already included in the installed package: **no repository clone, global CLI installation, or PATH setup is required**. The setup temporarily releases the terminal and accepts a pasted Telegram token with hidden input, outside the model conversation. Never paste tokens into the pi chat. Existing pi SDK, working directory, and agent directory are suggested when available; check the prompts before confirming.
+
+Setup requires interactive terminal pi (not RPC/print mode), waits for the model to become idle, and never starts the bot. `/communication start` requests managed background startup: systemd when configured, otherwise the Linux manual background manager. On unsupported systems without a suitable manager it fails rather than tying the bot to the pi terminal. Other commands show CLI output without invoking the model or adding it to model context. Arguments other than the five action names are rejected; use the standalone CLI for alternate profiles.
+
+The explicit manifest loads `src/extension.ts` without a TypeScript build. `/communication-status` remains a legacy capabilities command, not service health.
 
 **Installing or loading the extension does not start a service or contact Telegram.** `pi install` does not guarantee that the service executable is in your PATH.
 
-### Service CLI
+### Optional standalone service CLI
 
-For a stable standalone checkout, including before publication:
+The in-pi commands above are the normal installation path. A checkout is optional for development or standalone administration:
 
 ```sh
 git clone https://github.com/Capa00/pi-packages.git
@@ -43,7 +57,7 @@ Local extension installation from this checkout:
 pi install ./packages/communication
 ```
 
-From any installed package directory, invoke `node src/service/cli.mjs <command>` or `npm run service -- <command>`. If an npm installation exposes the bin in your PATH, `pi-communication <command>` works too. No second SDK copy is bundled: standalone execution must resolve the existing pi SDK, normally through the configured absolute `sdkModule` path.
+For direct administration from any installed package directory, invoke `node src/service/cli.mjs <command>` or `npm run service -- <command>`. If an npm installation exposes the bin in your PATH, `pi-communication <command>` works too. No second SDK copy is bundled: standalone execution must resolve the existing pi SDK, normally through the configured absolute `sdkModule` path.
 
 ## Guided setup and commands
 
@@ -180,7 +194,7 @@ Never share tokens in messages or logs. If exposed, rotate through BotFather. Te
 
 ## Updates
 
-Stop the service before changing its installation. Update the extension through pi package management after publication, or update the stable checkout for a checkout-based service. Re-run setup to inspect/reconfigure systemd if Node/package paths changed, then start explicitly. Keep configuration and sessions external; do not delete an uncertain delivery record to retry it.
+Stop the service before changing its installation. Update the package with `pi update npm:@capa00/pi-communication`, then `/reload`, or update the stable checkout for a checkout-based service. Re-run setup to inspect/reconfigure systemd if Node/package paths changed, then start explicitly. Keep configuration and sessions external; do not delete an uncertain delivery record to retry it.
 
 ## Tests and release
 

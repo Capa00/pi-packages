@@ -81,7 +81,7 @@ export async function setupSystemd(config, options = {}) {
   return result;
 }
 
-export async function interactiveSetup(configPath) {
+export async function interactiveSetup(configPath, defaults = {}) {
   if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error("Setup richiede un terminale interattivo");
   let muted = false;
   const output = new Writable({ write(chunk, encoding, callback) {
@@ -109,11 +109,13 @@ export async function interactiveSetup(configPath) {
     let botToken;
     try { botToken = (await rl.question("")).trim(); }
     finally { muted = false; process.stdout.write("\n"); }
-    let sdkDefault = "";
-    try { sdkDefault = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")); } catch {}
-    const sdkModule = await ask("Entry point SDK pi (dist/index.js)", sdkDefault);
-    const workingDirectory = await ask("Directory di lavoro", process.cwd());
-    const agentDirectory = await ask("Directory agente pi", resolve(homedir(), ".pi/agent"));
+    let sdkDefault = defaults.sdkModule ?? "";
+    if (!sdkDefault) {
+      try { sdkDefault = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")); } catch {}
+    }
+    const sdkModule = await ask("Pi SDK entry point (dist/index.js)", sdkDefault);
+    const workingDirectory = await ask("Working directory", defaults.workingDirectory ?? process.cwd());
+    const agentDirectory = await ask("Pi agent directory", defaults.agentDirectory ?? resolve(homedir(), ".pi/agent"));
     const id = await ask("ID interno contatto", "me");
     const name = await ask("Nome contatto");
     const address = await ask("ID numerico utente Telegram (non username)");
