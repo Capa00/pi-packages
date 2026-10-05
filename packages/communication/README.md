@@ -13,7 +13,7 @@ Telegram messaging, a multichannel contact directory, permission checks, and a p
 
 ## Installation
 
-**Version `0.1.2` is prepared, not yet published:** the native TUI wizard, multiple bot profiles, and per-bot Pi tool permissions described below are available in this checkout, not in npm `0.1.1`. That release still uses the terminal handoff for setup. For a temporary checkout test without replacing the installed package, see [Development smoke test](#development-smoke-test).
+**Version `0.1.3` is prepared, not yet published:** multiple bot profiles, user management, and per-bot Pi tool permissions described below are available in this checkout, not in published npm `0.1.2`. That release includes the earlier native TUI setup wizard. For a temporary checkout test without replacing the installed package, see [Development smoke test](#development-smoke-test).
 
 Install in pi:
 

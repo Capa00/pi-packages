@@ -18,7 +18,7 @@ Inside interactive pi, run `/communication setup`, then `/communication check` a
 
 ## Development
 
-Version `0.1.2` is prepared for npm publication and includes a native TUI setup wizard, Create/Edit selection for multiple bot profiles, and per-bot Pi file/shell tool permissions; npm `0.1.1` still uses terminal handoff. To test the checkout without changing the installed package or loading duplicate commands:
+Version `0.1.3` is prepared for npm publication with Create/Edit selection for multiple bot profiles, user management, and per-bot Pi file/shell tool permissions. Published npm `0.1.2` includes the earlier native TUI setup wizard. To test the checkout without changing the installed package or loading duplicate commands:
 
 ```sh
 pi --no-extensions --extension ./packages/communication/src/extension.ts
@@ -47,7 +47,7 @@ Tests use simulated Telegram and SDK implementations; they do not require real c
 
 ## Release preparation
 
-See [RELEASING.md](RELEASING.md). Versions `0.1.0` and `0.1.1` are published on npm. Version `0.1.1` adds in-pi setup and service controls; its public npm installation and real pi extension loading have been verified in an isolated profile.
+See [RELEASING.md](RELEASING.md). Versions `0.1.0`, `0.1.1`, and `0.1.2` are published on npm; the registry currently marks `0.1.2` as latest. Version `0.1.3` is prepared locally, not yet published. The public npm installation and real pi extension loading of `0.1.1` were verified in an isolated profile.
 
 ## License
 

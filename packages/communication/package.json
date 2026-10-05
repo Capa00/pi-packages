@@ -1,6 +1,6 @@
 {
   "name": "@capa00/pi-communication",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Telegram messaging, contact permissions, and a persistent communication service for pi.",
   "license": "MIT",
   "author": "Giuseppe Di Puglia Pugliese",
