@@ -4,7 +4,8 @@ import { mkdtemp, mkdir, readFile, writeFile, rm, stat, rename, symlink, chmod }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { prepareSetup, buildSetupDraft, saveSetup, configureStartup } from "../src/service/setup-editor.mjs";
-import { runGuidedSetup } from "../src/service/setup-flow.mjs";
+import { runGuidedSetup as guidedSetup } from "../src/service/setup-flow.mjs";
+const runGuidedSetup = (ctx, options) => guidedSetup(ctx, { selectProfile: async () => ({ configPath: options.configPath, id: "123", creating: false }), ...options });
 import { checkConfiguration, formatConfigurationCheck } from "../src/config/check.mjs";
 
 async function fixture(t) {
@@ -66,9 +67,9 @@ test("editing preserves other contacts, aliases, channels, permissions, sessions
   await mkdir(first.config.sessionsDirectory);
   await writeFile(join(first.config.sessionsDirectory, "keep.txt"), "SESSION");
   const p = await f.prepare();
-  const result = await saveSetup(p, buildSetupDraft(p, { botToken: "456:NEW_SECRET", name: "Alice New", address: "22222" }), { status: async () => ({ state: "running" }) });
+  const result = await saveSetup(p, buildSetupDraft(p, { botToken: "123:NEW_SECRET", name: "Alice New", address: "22222" }), { status: async () => ({ state: "running" }) });
   assert.equal(result.restartRequired, true);
-  assert.equal(result.config.telegram.botToken, "456:NEW_SECRET");
+  assert.equal(result.config.telegram.botToken, "123:NEW_SECRET");
   assert.equal(result.config.directory.contacts[0].id, first.config.directory.contacts[0].id);
   const updated = JSON.parse(await readFile(f.contacts, "utf8"));
   assert.deepEqual(updated.contacts[1], bob);
@@ -97,7 +98,7 @@ test("failed second commit rolls back the first commit without exposing secrets"
   await f.initial();
   const p = await f.prepare();
   const before = [p.configText, p.contactsText];
-  await assert.rejects(saveSetup(p, buildSetupDraft(p, { name: "Changed", botToken: "999:NEW_SECRET" }), {
+  await assert.rejects(saveSetup(p, buildSetupDraft(p, { name: "Changed", botToken: "123:NEW_SECRET" }), {
     move: async (source, target) => { if (target === f.file) throw new Error("PRIVATE_TOKEN disk failure"); await rename(source, target); },
   }), (error) => !error.message.includes("PRIVATE_TOKEN") && /retained/.test(error.message));
   assert.deepEqual(await Promise.all([readFile(f.file, "utf8"), readFile(f.contacts, "utf8")]), before);
@@ -121,7 +122,7 @@ test("failed initial configuration commit removes the newly written contacts", a
 test("cancellation performs no writes, no automatic-startup calls, and no fake success", async (t) => {
   const f = await fixture(t);
   const result = await runGuidedSetup({ ui: {} }, { ...f.defaults, configPath: f.file, showForm: async (_ctx, current) => {
-    assert.deepEqual(Object.keys(current).sort(), ["address", "automaticStartup", "existing", "hasToken", "name"]);
+    assert.deepEqual(Object.keys(current).sort(), ["address", "automaticStartup", "botId", "existing", "hasToken", "name", "permissions", "profileName", "users"]);
     return undefined;
   }, startupOptions: { install: () => assert.fail("must not run") } });
   assert.equal(result.state, "cancelled");
@@ -184,6 +185,57 @@ test("setup refuses symlinks and insecure files without modifying them", async (
   await symlink(f.file + ".original", f.file);
   await assert.rejects(f.prepare(), /symlinks/);
   assert.equal(await readFile(f.file, "utf8"), original);
+});
+
+test("user management adds and removes Telegram access while preserving other data", async (t) => {
+  const f = await fixture(t);
+  const initial = await f.initial();
+  const directory = JSON.parse(await readFile(f.contacts, "utf8"));
+  const alice = directory.contacts[0];
+  alice.aliases = ["Owner"];
+  alice.endpoints[0].permissions.canRequestSendMessages = false;
+  alice.endpoints.push({ channel: "discord", address: "keep", permissions: {} });
+  directory.contacts.push({ id: "other", name: "Other", aliases: [], endpoints: [{ channel: "slack", address: "keep", permissions: {} }] });
+  await writeFile(f.contacts, JSON.stringify(directory));
+  await mkdir(initial.config.sessionsDirectory);
+  await writeFile(join(initial.config.sessionsDirectory, "keep.txt"), "SESSION");
+  let p = await f.prepare();
+  assert.equal(p.current.users[0].id, alice.id);
+  const added = await saveSetup(p, buildSetupDraft(p, { users: [...p.current.users, { name: "Bob", address: "67890" }] }));
+  assert.deepEqual(JSON.parse(await readFile(f.contacts, "utf8")).contacts[0], alice);
+  const bob = added.config.directory.contacts.find((item) => item.name === "Bob");
+  assert.deepEqual(bob.endpoints[0].permissions, { canInteractWithPi: true, canReceiveMessages: true, canRequestSendMessages: true });
+  p = await f.prepare();
+  await saveSetup(p, buildSetupDraft(p, { users: p.current.users.filter((item) => item.id === bob.id) }));
+  const after = JSON.parse(await readFile(f.contacts, "utf8"));
+  const retained = { ...alice, endpoints: [alice.endpoints[1]] };
+  delete retained.preferredChannel;
+  assert.deepEqual(after.contacts.find((item) => item.id === alice.id), retained);
+  assert.deepEqual(after.contacts.find((item) => item.id === "other"), directory.contacts[1]);
+  assert.equal(await readFile(join(initial.config.sessionsDirectory, "keep.txt"), "utf8"), "SESSION");
+  p = await f.prepare();
+  const unchanged = await saveSetup(p, buildSetupDraft(p, { users: p.current.users }));
+  assert.equal(unchanged.state, "unchanged");
+  p = await f.prepare();
+  await saveSetup(p, buildSetupDraft(p, { users: [{ name: "Carol", address: "33333" }] }));
+  assert.ok(!JSON.parse(await readFile(f.contacts, "utf8")).contacts.some((item) => item.id === bob.id));
+});
+
+test("user management rejects invalid lists and respects stale snapshots and rollback", async (t) => {
+  const f = await fixture(t);
+  await f.initial();
+  const p = await f.prepare();
+  for (const users of [null, [], [{ name: "Bob", address: "@bob" }], [{ name: "Bob", address: "0" }], [{ id: "unknown", name: "Bob", address: "22222" }], [...p.current.users, { name: "Duplicate", address: "12345" }], [{ name: "Bob", address: "22222", permissions: {} }]]) {
+    assert.throws(() => buildSetupDraft(p, { users }));
+  }
+  const draft = buildSetupDraft(p, { profileName: "Changed", users: [{ name: "Bob", address: "22222" }] });
+  await assert.rejects(saveSetup(p, draft, { move: async (source, target) => {
+    if (target === f.file) throw new Error("disk failure");
+    await rename(source, target);
+  } }), /retained/);
+  assert.equal(await readFile(f.contacts, "utf8"), p.contactsText);
+  await writeFile(f.contacts, p.contactsText + "\n");
+  await assert.rejects(saveSetup(p, draft), /changed while setup was open/);
 });
 
 test("automatic-startup helper never forwards raw errors", async () => {

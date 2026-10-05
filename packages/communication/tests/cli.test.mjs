@@ -4,7 +4,7 @@ import { mkdtemp, readFile, writeFile, stat, mkdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { writeSetup } from "../src/service/setup.mjs";
+import { prepareSetup, buildSetupDraft, saveSetup } from "../src/service/setup-editor.mjs";
 import { serviceStatus, startBackground, stopBackground } from "../src/service/control.mjs";
 
 const cli = new URL("../src/service/cli.mjs", import.meta.url).pathname;
@@ -13,43 +13,49 @@ async function fixture(t) {
   t.after(() => rm(base, { recursive: true, force: true }));
   const sdkModule = join(base, "sdk.mjs");
   await writeFile(sdkModule, "export const fake = true;");
-  const values = { botToken: "123456:PRIVATE_SECRET", sdkModule, workingDirectory: base, agentDirectory: base, id: "me", name: "Me", address: "123456789" };
-  return { base, values, path: join(base, "config.json") };
+  const values = { botToken: "123456:PRIVATE_SECRET", sdkModule, workingDirectory: base, agentDirectory: base, name: "Me", address: "123456789" };
+  const path = join(base, "config.json");
+  const create = async (overrides = {}, file = path) => {
+    const answers = { ...values, ...overrides };
+    const prepared = await prepareSetup(file, answers);
+    return (await saveSetup(prepared, buildSetupDraft(prepared, answers))).config;
+  };
+  return { base, values, path, create };
 }
 
-test("setup crea file esterni restrittivi, validati e non sovrascrivibili", async (t) => {
-  const { base, values, path } = await fixture(t);
-  const config = await writeSetup(path, values);
+test("setup creates private external files and refuses a token from another bot", async (t) => {
+  const { base, path, create } = await fixture(t);
+  const config = await create();
   assert.equal(config.directory.contacts[0].endpoints[0].permissions.canRequestSendMessages, true);
   if (process.platform !== "win32") {
     assert.equal((await stat(path)).mode & 0o777, 0o600);
     assert.equal((await stat(join(base, "contacts.json"))).mode & 0o777, 0o600);
   }
   const original = await readFile(path, "utf8");
-  await assert.rejects(writeSetup(path, { ...values, botToken: "99:DIFFERENT" }), /Nessun file esistente sovrascritto/);
+  await assert.rejects(create({ botToken: "99:DIFFERENT" }), /different bot/);
   assert.equal(await readFile(path, "utf8"), original);
 });
 
-test("setup annulla i nuovi file se la rubrica esiste, senza toccarla", async (t) => {
-  const { base, values, path } = await fixture(t);
-  await writeFile(join(base, "contacts.json"), "existing");
-  await assert.rejects(writeSetup(path, values), /Setup non completato/);
+test("setup refuses orphaned contacts without modifying them", async (t) => {
+  const { base, path, create } = await fixture(t);
+  await writeFile(join(base, "contacts.json"), "existing", { mode: 0o600 });
+  await assert.rejects(create(), /will not overwrite/);
   await assert.rejects(stat(path), { code: "ENOENT" });
   assert.equal(await readFile(join(base, "contacts.json"), "utf8"), "existing");
 });
 
-test("setup rifiuta token, ID e percorsi invalidi prima di scrivere", async (t) => {
-  const { values, path } = await fixture(t);
-  await assert.rejects(writeSetup(path, { ...values, botToken: "secret" }), /formato non valido/);
-  await assert.rejects(writeSetup(path, { ...values, address: "username" }), /ID utente/);
-  await assert.rejects(writeSetup(path, { ...values, sdkModule: "/nonexistent-sdk" }), /Modulo SDK/);
-  await assert.rejects(writeSetup(new URL("../config-test.json", import.meta.url).pathname, values), /esterna al package/);
+test("setup rejects invalid tokens, user IDs, and paths before writing", async (t) => {
+  const { path, create } = await fixture(t);
+  await assert.rejects(create({ botToken: "secret" }), /valid bot token/);
+  await assert.rejects(create({ address: "username" }), /numeric Telegram user ID/);
+  await assert.rejects(create({ sdkModule: "/nonexistent-sdk" }), /before entering a token/);
+  await assert.rejects(create({}, new URL("../config-test.json", import.meta.url).pathname), /outside the installed package/);
   await assert.rejects(stat(path), { code: "ENOENT" });
 });
 
 test("CLI check/status non aprono connessioni, setup richiede un terminale", async (t) => {
-  const { values, path } = await fixture(t);
-  await writeSetup(path, values);
+  const { values, path, create } = await fixture(t);
+  await create();
   for (const [command, message] of [["check", /Configuration is valid/], ["status", /Servizio fermo/]]) {
     const result = spawnSync(process.execPath, [cli, command, "--config", path], { encoding: "utf8", timeout: 5000 });
     assert.equal(result.status, 0, result.stderr);
@@ -70,8 +76,8 @@ test("CLI rifiuta opzioni ambigue o inappropriate", () => {
 });
 
 test("lock non gestiti non vengono rimossi né arrestati", async (t) => {
-  const { values, path } = await fixture(t);
-  const config = await writeSetup(path, values);
+  const { create } = await fixture(t);
+  const config = await create();
   const lock = join(config.sessionsDirectory, ".telegram-service.lock");
   await mkdir(lock, { recursive: true });
   assert.equal((await serviceStatus(config)).state, "unmanaged-or-stale-lock");
@@ -81,8 +87,8 @@ test("lock non gestiti non vengono rimossi né arrestati", async (t) => {
 });
 
 test("PID riutilizzati e metadati invalidi non autorizzano segnali", { skip: process.platform !== "linux" }, async (t) => {
-  const { base, values, path } = await fixture(t);
-  const config = await writeSetup(path, values);
+  const { base, create } = await fixture(t);
+  const config = await create();
   const file = join(base, "managed-service.json");
   await writeFile(file, JSON.stringify({ pid: process.pid, identity: "not-the-start-time", configFile: config.configFile }));
   assert.equal((await serviceStatus(config)).state, "stopped");
@@ -92,8 +98,8 @@ test("PID riutilizzati e metadati invalidi non autorizzano segnali", { skip: pro
 });
 
 test("background gestito: ready, status, doppio avvio, stop senza Telegram", { skip: process.platform !== "linux" }, async (t) => {
-  const { base, values, path } = await fixture(t);
-  const config = await writeSetup(path, values);
+  const { base, create } = await fixture(t);
+  const config = await create();
   const entry = join(base, "fake-service.mjs");
   await writeFile(entry, `process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 1000); process.send({ready:true});`);
   t.after(async () => { try { await stopBackground(config, { timeout: 3000 }); } catch {} });
@@ -107,8 +113,8 @@ test("background gestito: ready, status, doppio avvio, stop senza Telegram", { s
 });
 
 test("avvio background fallito non dichiara il servizio attivo", { skip: process.platform !== "linux" }, async (t) => {
-  const { base, values, path } = await fixture(t);
-  const config = await writeSetup(path, values);
+  const { base, create } = await fixture(t);
+  const config = await create();
   const entry = join(base, "failed-service.mjs");
   await writeFile(entry, "process.exit(1);");
   await assert.rejects(startBackground(config, { entry, timeout: 3000 }), /durante l'avvio/);

@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { loadConfiguration } from "../src/config/load.mjs";
-import { validateDirectory, resolveContact, resolveRecipientEndpoint } from "../src/contacts/directory.mjs";
-import { canInteract, canReceive, authorizeRequestedSend } from "../src/contacts/permissions.mjs";
+import { findEndpoint, validateDirectory, resolveContact, resolveRecipientEndpoint } from "../src/contacts/directory.mjs";
+import { authorizeRequestedSend } from "../src/contacts/permissions.mjs";
 
 const grants = { canInteractWithPi: true, canReceiveMessages: true, canRequestSendMessages: true };
 const sender = { channel: "telegram", address: "123" };
@@ -27,16 +27,18 @@ async function fixture(t) {
 
 test("utenti sconosciuti esclusi e permessi mancanti negati", () => {
   const data = directory([contact("alice", "123", {})]);
-  assert.equal(canInteract(data, sender), false);
-  assert.equal(canReceive(data, sender), false);
-  assert.equal(canInteract(data, { ...sender, address: "999" }), false);
+  const endpoint = findEndpoint(data, sender).endpoint;
+  assert.equal(endpoint.permissions.canInteractWithPi, false);
+  assert.equal(endpoint.permissions.canReceiveMessages, false);
+  assert.equal(findEndpoint(data, { ...sender, address: "999" }), undefined);
   assert.throws(() => authorizeRequestedSend(data, sender, "alice"), /non autorizzato/);
 });
 
 test("profili iniziali uguali consentono interazione e invio richiesto", () => {
   const data = directory([contact(), contact("bob", "456")]);
-  assert.equal(canInteract(data, sender), true);
-  assert.equal(canReceive(data, sender), true);
+  const endpoint = findEndpoint(data, sender).endpoint;
+  assert.equal(endpoint.permissions.canInteractWithPi, true);
+  assert.equal(endpoint.permissions.canReceiveMessages, true);
   assert.equal(authorizeRequestedSend(data, sender, "bob").endpoint.address, "456");
 });
 
@@ -72,9 +74,9 @@ test("supporta recapiti futuri e scope separati", () => {
   const b = contact("bob", "456");
   b.endpoints.push({ channel: "slack", address: "U123", scope: "W2", permissions: grants });
   const data = directory([a, b]);
-  assert.equal(canInteract(data, { channel: "slack", address: "U123", scope: "W1" }), false);
-  assert.equal(canInteract(data, { channel: "slack", address: "U123", scope: "W2" }), true);
-  assert.equal(canInteract(data, { channel: "slack", address: "U123" }), false);
+  assert.equal(findEndpoint(data, { channel: "slack", address: "U123", scope: "W1" }).endpoint.permissions.canInteractWithPi, false);
+  assert.equal(findEndpoint(data, { channel: "slack", address: "U123", scope: "W2" }).endpoint.permissions.canInteractWithPi, true);
+  assert.equal(findEndpoint(data, { channel: "slack", address: "U123" }), undefined);
 });
 
 test("carica solo file, risolve percorsi relativi e non crea sessioni", async (t) => {

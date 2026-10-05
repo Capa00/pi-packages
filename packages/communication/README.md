@@ -13,7 +13,7 @@ Telegram messaging, a multichannel contact directory, permission checks, and a p
 
 ## Installation
 
-**Version `0.1.2` is prepared, not yet published:** the native TUI wizard described below is available in this checkout, not in npm `0.1.1`. That release still uses the terminal handoff for setup. For a temporary checkout test without replacing the installed package, see [Development smoke test](#development-smoke-test).
+**Version `0.1.2` is prepared, not yet published:** the native TUI wizard, multiple bot profiles, and per-bot Pi tool permissions described below are available in this checkout, not in npm `0.1.1`. That release still uses the terminal handoff for setup. For a temporary checkout test without replacing the installed package, see [Development smoke test](#development-smoke-test).
 
 Install in pi:
 
@@ -31,11 +31,11 @@ Reload pi if necessary with `/reload`, then run:
 /communication stop
 ```
 
-These commands are included in the package: **no repository clone, global CLI installation, or PATH setup is required**. Setup runs a native pi TUI wizard: hidden bot token, your name, and your positive numeric Telegram user ID (not `@username`), followed by a review with Confirm/Cancel. The token never enters the model conversation. Never paste tokens into the pi chat.
+These commands are included in the package: **no repository clone, global CLI installation, or PATH setup is required**. Setup runs a native pi TUI wizard: choose Create or Edit a Telegram bot, then enter an optional profile name first, a hidden bot token, your name, your positive numeric Telegram user ID (not `@username`), then manage the user list with **Add user**, **Remove user**, and **Continue**, and choose three per-bot Pi tool permissions, followed by Confirm/Cancel. The bot ID is derived automatically from the numeric prefix before `:` in the BotFather token; setup never asks for it separately. Your numeric Telegram user ID is still required to authorize your account. The token never enters the model conversation. Never paste tokens into the pi chat.
 
-Technical paths are detected before asking for the token: the running pi SDK and current pi agent directory are used automatically. A new service workspace is created beside the configuration at `~/.pi/communication/workspace`, independent of pi's current working directory. An accessible existing workspace is preserved. If the host paths cannot be detected, setup fails before opening the form.
+Technical paths are detected before asking for the token: the running pi SDK and current pi agent directory are used automatically. A new managed bot has its own configuration, contacts, sessions, and workspace in `~/.pi/communication/bots/<bot-id>/`, independent of pi's current working directory. The existing default `~/.pi/communication/config.json` profile remains supported without moving its data. An accessible existing workspace is preserved. If the host paths cannot be detected, setup fails before opening the form.
 
-Setup requires interactive terminal pi (not RPC/print mode), waits for the model to become idle, and never starts the bot. `/communication start` requests managed background startup: systemd when configured, otherwise the Linux manual background manager. On unsupported systems without a suitable manager it fails rather than tying the bot to the pi terminal. `check` reports local validation results directly; `start`, `status`, and `stop` invoke the included CLI. Their output does not invoke the model or enter model context. Arguments other than the five action names are rejected; use the standalone CLI for alternate profiles.
+Setup requires interactive terminal pi (not RPC/print mode), waits for the model to become idle, and never starts the bot. `/communication start` requests managed background startup: systemd when configured, otherwise the Linux manual background manager. On unsupported systems without a suitable manager it fails rather than tying the bot to the pi terminal. `check` reports local validation results directly; `start`, `status`, and `stop` invoke the included CLI. Their output does not invoke the model or enter model context. Arguments other than the five action names are rejected. When several managed bots exist, check/start/status/stop ask which bot to control; cancelling performs no operation. Noninteractive multi-bot control refuses to guess; use the CLI `--config` option.
 
 The explicit manifest loads `src/extension.ts` without a TypeScript build. `/communication-status` remains a legacy capabilities command, not service health.
 
@@ -67,9 +67,9 @@ For direct administration from any installed package directory, invoke `node src
 
 ### In pi
 
-`/communication setup` requires TUI mode and waits for the model to become idle. Enter advances through the three fields; Esc or Ctrl+C cancels without saving. At review, use arrow keys and Enter to choose Confirm or Cancel.
+`/communication setup` requires TUI mode and waits for the model to become idle. First choose Create a new bot or Edit an existing one. Enter advances through profile name, hidden token, the first user's name and Telegram ID, user management, and three permission selectors; Esc or Ctrl+C cancels without saving. **Add user** asks for another name and positive numeric Telegram user ID. **Remove user** lets you select a listed user; removal is pending until final confirmation. At least one Telegram user must remain. Permissions are stored for the bot, not separately for each Telegram user. At review, use arrow keys and Enter to choose Confirm or Cancel.
 
-For an existing configuration, blank fields keep the saved values; the saved token is never loaded into the UI. Setup preserves the contact's stable identity, aliases, other endpoints, permissions, other contacts, and sessions. Ambiguous setup contacts, duplicate Telegram IDs, symlinks, unsafe file permissions, and changes made while the form is open are rejected rather than overwritten. Invalid configuration/contacts may require manual repair; use `/communication check` for diagnostics.
+For an existing configuration, blank fields keep the saved values; the saved token is never loaded into the UI. Existing tool permissions are selected by default. Rotating a token must retain the same bot ID; changing bots requires a new profile so old conversations and delivery state are not reassigned. Setup preserves the contact's stable identity, aliases, other endpoints, permissions, other contacts, and sessions. Contacts with multiple Telegram endpoints, duplicate Telegram IDs, symlinks, unsafe file permissions, and changes made while the form is open are rejected rather than overwritten. Invalid configuration/contacts may require manual repair; use `/communication check` for diagnostics.
 
 Confirm creates or updates private configuration and contacts files (mode `600` on Unix). A new contact receives permission to interact, receive messages, and request confirmed sends, as stated in the review. On Linux, confirming a new setup also configures/enables automatic startup; existing setups ask about startup separately after saving. Setup never starts or restarts the bot, contacts Telegram, or imports the SDK. Startup failure is reported separately from saved configuration. If the service may be running, changed values require an explicit stop/start.
 
@@ -79,7 +79,7 @@ Confirm creates or updates private configuration and contacts files (mode `600` 
 
 All commands default to `~/.pi/communication/config.json`; use `--config /absolute/path/config.json` to select another profile. The standalone CLI retains its separate terminal prompts; it is not the native TUI wizard.
 
-- `setup`: interactive terminal only, hidden token input, explicit contact authorization. Creates external configuration and contacts with mode `600`, without overwriting existing files. On Linux, offers to create and enable a systemd user unit, **never starts it**. Does not contact Telegram or import the SDK. With existing configuration it offers only systemd setup.
+- `setup`: interactive terminal only, hidden token input, Create/Edit selection, explicit contact authorization and per-bot Pi tool permissions. Uses the same safe editor as the TUI, with private files, validation, stale-snapshot protection, and rollback. It never contacts Telegram, imports the SDK, starts, or restarts the bot. New Linux setup enables a systemd user unit after save confirmation; editing asks about startup separately. With explicit `--config`, setup creates or edits exactly that file; without it, setup discovers the default and managed bot profiles. Optional `--working-directory` overrides the new CLI workspace; an accessible existing workspace is preserved.
 - `check`: uses the same local validation as `/communication check`, without printing secrets, connecting to Telegram, or creating sessions. It does not validate token connectivity or model credentials.
 - `start`: uses the recognized systemd unit if present; otherwise runs in the foreground. `start --foreground` always forces foreground operation. Do not run two consumers for the same bot.
 - `start --background`: uses systemd when configured, otherwise Linux manual background management with `service.log` and `managed-service.json` beside the configuration. Manual background mode survives terminal closure, not reboot.
@@ -101,7 +101,12 @@ Example `config.json` (Unix: `chmod 600 config.json`):
   "pi": {
     "sdkModule": "/path/to/pi-coding-agent/dist/index.js",
     "workingDirectory": "/path/to/workspace",
-    "agentDirectory": "/path/to/.pi/agent"
+    "agentDirectory": "/path/to/.pi/agent",
+    "permissions": {
+      "readFiles": false,
+      "writeFiles": false,
+      "executeCommands": false
+    }
   },
   "contactsFile": "contacts.json",
   "sessionsDirectory": "sessions"
@@ -109,6 +114,26 @@ Example `config.json` (Unix: `chmod 600 config.json`):
 ```
 
 Relative paths are resolved against the configuration file. `pi` is required to start the service. `sdkModule` can be omitted only when Node can already resolve the SDK. No implicit global installation search or SDK download is performed. The configured agent directory supplies pi settings, models, and credentials; configure them through pi first. The SDK retains its own provider resolution behavior.
+
+### Per-bot Pi tool permissions
+
+`pi.permissions` controls the available computer tools for **every authorized user of this bot**:
+
+| Permission | Enabled tools |
+|---|---|
+| `readFiles` | `read`, `grep`, `find`, `ls` |
+| `writeFiles` | `write`, `edit` |
+| `executeCommands` | `bash` |
+
+Missing grants default to false; unknown fields or non-boolean values are rejected. Legacy configurations retain communication-only access unless explicitly changed. Configuration changes require an explicit service stop/start. External extensions, skills, and templates remain disabled; host tool preferences cannot enable extra tools.
+
+**This is tool selection, not a sandbox or root grant.** Tools operate with the service account's OS permissions and can reach paths outside the workspace. Shell access can also read/write files, access credentials, make network requests, and change configuration regardless of the other two switches. There is no added per-file or per-command confirmation. Give powerful bots only to trusted authorized contacts. For enforced filesystem/process isolation, use a separate OS account or container.
+
+The managed outbound tools still require confirmation, but unrestricted shell/file access is not confined to that protocol: it can access the bot token and external APIs. Do not treat managed-send confirmation or separate session directories as an OS security boundary.
+
+The optional `profileName` is a label shown in setup and check/start/status/stop selection menus. Set or rename it in setup (up to 80 characters, no control characters). Existing profiles without a name keep their bot-ID label. Names need not be unique: menus also show the bot ID. Renaming never moves files, sessions, workspaces, or systemd units.
+
+Managed profile identity comes from the numeric bot ID in its token. A new managed bot uses `bots/<id>/config.json`; duplicate identities in the managed directory are rejected. Alternate profiles outside that directory are administered explicitly with CLI `--config`; avoid running duplicate consumers for a bot.
 
 Example `contacts.json`:
 
@@ -137,7 +162,7 @@ Example `contacts.json`:
 }
 ```
 
-Telegram addresses are positive numeric strings, not usernames. Missing permissions are denied. A directory entry alone grants no authorization. The initial setup grants all three permissions after explicit confirmation; there is no administrator role. Additional contacts are edited manually. Duplicate IDs/endpoints, unknown fields, and invalid values are rejected; ambiguous names require clarification.
+Telegram addresses are positive numeric strings, not usernames. Missing permissions are denied. A directory entry alone grants no authorization. The initial setup grants all three permissions after explicit confirmation; there is no administrator role. Add and remove Telegram users through setup. Existing users keep their stable contact IDs, aliases, and permissions. Removal deletes the Telegram endpoint; other channels and saved sessions are retained, and a contact with no remaining endpoints is removed. New users receive all three contact permissions after final confirmation. More advanced contact settings are edited manually. Duplicate IDs/endpoints, unknown fields, and invalid values are rejected; ambiguous names require clarification.
 
 WhatsApp, Slack, and Discord endpoints can be stored but cannot deliver messages yet. Slack and Discord may include a workspace/server `scope`. Configuration/contact changes require a service restart.
 
@@ -166,7 +191,7 @@ To migrate a managed background process: `setup`, then `stop`, then `start`. Set
 - Long polling, private chats only, stable-ID authorization, text messages only.
 - Interaction and reception permissions required for responses. `/start` acknowledges access without invoking the model.
 - One persistent SDK session and processing queue per contact; different contacts operate independently.
-- Only `communication_contacts` and `communication_prepare_send` are exposed to the model. No file/command tools; external extensions, skills, and templates are disabled. Pi preferences are copied in memory without changing host settings.
+- `communication_contacts` and `communication_prepare_send` are exposed alongside only the computer tools explicitly permitted for this bot. By default, no file/command tools are enabled. External extensions, skills, and templates remain disabled. Pi preferences are copied in memory without changing host settings.
 - Native typing indicator refreshed every four seconds; failures do not block responses.
 - Plain-text responses are split under Telegram limits.
 - No unsolicited messages or model turns; forwarding never invokes the recipient's model.
@@ -221,7 +246,7 @@ npm test
 npm run check:packages
 ```
 
-Tests simulate SDK, Telegram, and systemd without real credentials or delivery. Native wizard tests cover hidden input, split bracketed paste, validation, preservation of existing values, cancellation, and narrow widths. Editor/flow tests cover preflight, private files, preserved contacts/sessions, stale snapshots, rollback on write failure, and separate startup outcomes. PTY tests cover the standalone CLI setup, not the complete pi TUI; they isolate HOME and systemd commands and require Linux, Python 3, and a usable user runtime directory, otherwise they are skipped.
+Tests simulate SDK, Telegram, and systemd without real credentials or delivery. Bot-profile tests cover isolation, selection/cancellation, duplicate/mismatched identities, legacy profiles, permission validation, all eight permission combinations, and preservation during edits. Set `PI_COMMUNICATION_TEST_SDK=/absolute/path/to/pi-coding-agent/dist/index.js` to also check the real host SDK's active tool registry offline, with no model calls. Native wizard tests cover hidden input, split bracketed paste, validation, preservation of existing values, cancellation, and narrow widths. Editor/flow tests cover preflight, private files, preserved contacts/sessions, stale snapshots, rollback on write failure, and separate startup outcomes. PTY tests cover the standalone CLI setup, not the complete pi TUI; they isolate HOME and systemd commands and require Linux, Python 3, and a usable user runtime directory, otherwise they are skipped.
 
 ### Development smoke test
 
@@ -231,7 +256,7 @@ From the repository root, launch a temporary pi session with only this extension
 pi --no-extensions --extension ./packages/communication/src/extension.ts
 ```
 
-This avoids loading both the installed npm extension and checkout commands. It does not replace or update the installed package. Inside pi, try `/communication setup`: cancel first, then review the three fields and confirmation. Keep the token in the wizard, never in chat. Setup uses the normal communication configuration; confirmation saves files and, for a new Linux setup, configures automatic startup, but does not start the bot. Do not confirm unless those changes are intended.
+This avoids loading both the installed npm extension and checkout commands. It does not replace or update the installed package. Inside pi, try `/communication setup`: cancel first, then review Create/Edit selection, bot identity, the four fields, tool permissions, and confirmation. Keep the token in the wizard, never in chat. Setup uses the normal communication configuration; confirmation saves files and, for a new Linux setup, configures automatic startup, but does not start the bot. Do not confirm unless those changes are intended.
 
 Check keyboard navigation, masking, resizing, narrow widths, and return to the pi editor after cancellation/confirmation. Repeat setup to verify blank fields preserve saved values, then run `/communication check`. The user reported successful live testing of the setup and commands before preparing `0.1.2`; separate regular/fullscreen coverage was not recorded. Bot startup and messaging tests are separate explicit operations.
 

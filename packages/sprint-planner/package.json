@@ -1,0 +1,10 @@
+{
+  "name": "@capa00/pi-sprint-planner",
+  "version": "0.1.0",
+  "description": "Sprint planning skill for Pi: acceptance criteria, technical tasks, and tests without implementing code.",
+  "keywords": ["pi-package", "pi", "skill", "sprint-planning"],
+  "files": ["SKILL.md", "references", "README.md"],
+  "pi": {
+    "skills": ["./SKILL.md"]
+  }
+}

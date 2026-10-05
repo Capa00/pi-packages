@@ -22,8 +22,10 @@ Uso:
 
 Tutti i comandi accettano --config /percorso/config.json.
 Default: ~/.pi/communication/config.json (nessuna variabile d'ambiente).
-setup è interattivo, nasconde il token e non sovrascrive file esistenti.
-Su Linux crea/abilita systemd utente senza avviare; con file già presenti configura solo systemd.
+setup is interactive: create a new bot or edit an existing profile; hidden token and explicit save confirmation.
+Choose Pi file-read, file-write, and shell-command permissions for each bot (not per user).
+New managed profiles live in ~/.pi/communication/bots/<numeric-bot-id>/ with separate sessions.
+On Linux, new setup enables systemd without starting it; existing setup asks about startup separately.
 Per avvio al boot senza login occorre linger: il setup ne verifica lo stato.
 check valida senza connessioni. start usa systemd se configurato, altrimenti il primo piano.
 --foreground forza il primo piano (Ctrl+C); --background usa systemd o gestione Linux manuale.
@@ -59,7 +61,7 @@ if (args.length === 1 && ["--help", "-h"].includes(args[0])) {
       } else throw new Error("Argomenti non validi. Usa --help per informazioni.");
     }
     if (command === "setup") {
-      await interactiveSetup(configPath, setupDefaults);
+      await interactiveSetup(configPath, { ...setupDefaults, directProfile: configSeen });
     } else if (command === "check") {
       const result = await checkConfiguration(configPath);
       console.log(formatConfigurationCheck(result));

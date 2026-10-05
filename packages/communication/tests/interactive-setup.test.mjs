@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { loadConfiguration } from "../src/config/load.mjs";
+import { unitLocation } from "../src/service/systemd.mjs";
+import { botConfigPath } from "../src/service/profiles.mjs";
 
 const cli = new URL("../src/service/cli.mjs", import.meta.url).pathname;
 // Un PTY reale esercita readline e mascheramento; gli eseguibili systemd sono stub
@@ -68,28 +70,30 @@ async function fixture(t) {
   const guard = join(home, "guard.mjs");
   await writeFile(sdk, 'throw new Error("Il setup non deve importare SDK");');
   await writeFile(guard, 'globalThis.fetch = () => { throw new Error("Rete vietata nel collaudo setup"); };');
-  const unit = join(home, ".config/systemd/user/pi-communication.service");
+  const path = join(home, ".pi/communication/config.json");
+  const profilePath = botConfigPath(path, "123456");
+  const { name: unitName, path: unit } = unitLocation({ configFile: profilePath }, { home });
   for (const command of ["systemctl", "loginctl", "sudo"]) {
     await writeFile(join(bin, command), `#!${process.execPath}
 import {appendFileSync, mkdirSync, symlinkSync, existsSync} from 'node:fs';
 const command = ${JSON.stringify(command)};
 const args = process.argv.slice(2);
 const reload = command === 'systemctl' && JSON.stringify(args) === JSON.stringify(['--user','daemon-reload']);
-const enable = command === 'systemctl' && JSON.stringify(args) === JSON.stringify(['--user','enable','pi-communication.service']);
+const enable = command === 'systemctl' && JSON.stringify(args) === JSON.stringify(['--user','enable',${JSON.stringify(unitName)}]);
 const linger = command === 'loginctl' && args.length === 4 && args[0] === 'show-user' && args[2] === '--property=Linger' && args[3] === '--value';
 if (!reload && !enable && !linger) { console.error('Comando vietato nel collaudo'); process.exit(1); }
 appendFileSync(${JSON.stringify(calls)}, JSON.stringify([command,args])+'\\n');
 if (enable) {
   const directory = ${JSON.stringify(join(home, ".config/systemd/user/default.target.wants"))};
   mkdirSync(directory, {recursive:true});
-  const link = directory + '/pi-communication.service';
+  const link = directory + '/' + ${JSON.stringify(unitName)};
   if (!existsSync(link)) symlinkSync(${JSON.stringify(unit)}, link);
 }
 if (linger) console.log('yes');
 `, { mode: 0o700 });
   }
   const env = { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}`, NODE_OPTIONS: "" };
-  return { home, sdk, unit, calls, path: join(home, ".pi/communication/config.json"), env, guard };
+  return { home, sdk, unit, unitName, calls, path, profilePath, env, guard };
 }
 
 function runSetup(f, steps, additionalArgs = []) {
@@ -103,16 +107,20 @@ function runSetup(f, steps, additionalArgs = []) {
   return answer.output;
 }
 
-function firstSteps(f, confirmation = "sì") {
+function firstSteps(f, confirmation = "yes") {
   return [
-    ["Token BotFather (nascosto): ", "123456:PTY_PRIVATE_TOKEN"],
-    ["Pi SDK entry point (dist/index.js)", `\x1b[A${f.sdk}`], // Freccia su non deve recuperare il token.
-    ["Working directory", f.home],
+    ["Pi SDK entry point (dist/index.js)", f.sdk],
     ["Pi agent directory", f.home],
-    ["ID interno contatto", "me"],
-    ["Nome contatto", "Test User"],
-    ["ID numerico utente Telegram", "123456789"],
-    ["Creare i file e configurare systemd su Linux? Scrivi sì", confirmation],
+    ["Choice (number or cancel)", "1"],
+    ["Profile name (optional)", "Test bot"],
+    ["BotFather token (hidden; Enter keeps existing): ", "123456:PTY_PRIVATE_TOKEN"],
+    ["Your name", "\x1b[ATest User"], // Up must not retrieve the secret from readline history.
+    ["Your numeric Telegram user ID", "123456789"],
+    ["Choice (number or cancel)", "1"],
+    ["Allow readFiles? Type yes/no", "yes"],
+    ["Allow writeFiles? Type yes/no", "no"],
+    ["Allow executeCommands? Type yes/no", "no"],
+    ["Confirm? Type yes", confirmation],
   ];
 }
 
@@ -124,17 +132,19 @@ test("setup completo da zero in PTY: token nascosto, file validi e unità abilit
   const f = await fixture(t); if (!f) return;
   const output = runSetup(f, firstSteps(f));
   assert.ok(!output.includes("PTY_PRIVATE_TOKEN"), "Il token non deve apparire sul terminale neppure con freccia su");
-  assert.match(output, /Configurazione creata e validata/);
-  assert.match(output, /creata e abilitata, ma non avviata/);
-  const config = await loadConfiguration(f.path);
+  assert.match(output, /Configuration saved and validated/);
+  assert.match(output, /Automatic startup configured; the bot was not started/);
+  const config = await loadConfiguration(f.profilePath);
+  assert.deepEqual(config.pi.permissions, { readFiles: true, writeFiles: false, executeCommands: false });
   assert.equal(config.directory.contacts[0].name, "Test User");
+  assert.equal(config.profileName, "Test bot");
   assert.equal(config.pi.sdkModule, f.sdk);
-  for (const path of [f.path, config.contactsFile, f.unit]) assert.equal((await stat(path)).mode & 0o777, 0o600);
+  for (const path of [f.profilePath, config.contactsFile, f.unit]) assert.equal((await stat(path)).mode & 0o777, 0o600);
   const calls = await recordedCalls(f);
   assert.deepEqual(calls.map(([command, args]) => [command, args[command === "systemctl" ? 1 : 0]]), [
     ["systemctl", "daemon-reload"], ["systemctl", "enable"], ["loginctl", "show-user"],
   ]);
-  assert.ok(await stat(join(f.home, ".config/systemd/user/default.target.wants/pi-communication.service")));
+  assert.ok(await stat(join(f.home, ".config/systemd/user/default.target.wants", f.unitName)));
   await assert.rejects(stat(config.sessionsDirectory), { code: "ENOENT" });
 });
 
@@ -142,12 +152,12 @@ test("extension setup suggestions can be accepted with hidden terminal input", a
   const f = await fixture(t); if (!f) return;
   const steps = firstSteps(f).map(([prompt, answer]) => {
     if (prompt === "Pi SDK entry point (dist/index.js)") return [`${prompt} [${f.sdk}]`, ""];
-    if (prompt === "Working directory" || prompt === "Pi agent directory") return [`${prompt} [${f.home}]`, ""];
+    if (prompt === "Pi agent directory") return [`${prompt} [${f.home}]`, ""];
     return [prompt, answer];
   });
   const output = runSetup(f, steps, ["--sdk-module", f.sdk, "--working-directory", f.home, "--agent-directory", f.home]);
   assert.ok(!output.includes("PTY_PRIVATE_TOKEN"));
-  const config = await loadConfiguration(f.path);
+  const config = await loadConfiguration(f.profilePath);
   assert.equal(config.pi.sdkModule, f.sdk);
   assert.equal(config.pi.workingDirectory, f.home);
   assert.equal(config.pi.agentDirectory, f.home);
@@ -155,28 +165,55 @@ test("extension setup suggestions can be accepted with hidden terminal input", a
   assert.equal((await recordedCalls(f)).length, 3);
 });
 
+test("PTY setup adds multiple users and removes one only on final confirmation", async (t) => {
+  const f = await fixture(t); if (!f) return;
+  const steps = firstSteps(f);
+  const index = steps.findIndex(([prompt]) => prompt === "Your numeric Telegram user ID") + 1;
+  steps.splice(index, 1,
+    ["Choice (number or cancel)", "2"],
+    ["User name", "Bob"], ["Telegram user ID", "67890"],
+    ["Choice (number or cancel)", "2"],
+    ["User name", "Carol"], ["Telegram user ID", "33333"],
+    ["Choice (number or cancel)", "3"],
+    ["Choice (number or cancel)", "2"],
+    ["Choice (number or cancel)", "1"],
+  );
+  const output = runSetup(f, steps);
+  assert.ok(!output.includes("PTY_PRIVATE_TOKEN"));
+  const config = await loadConfiguration(f.profilePath);
+  assert.deepEqual(config.directory.contacts.map((user) => [user.name, user.endpoints[0].address]), [["Test User", "123456789"], ["Carol", "33333"]]);
+});
+
 test("annullamento interattivo non crea configurazione, rubrica o unità", async (t) => {
   const f = await fixture(t); if (!f) return;
   const output = runSetup(f, firstSteps(f, "no"));
-  assert.match(output, /Setup annullato/);
+  assert.match(output, /Setup cancelled/);
   assert.ok(!output.includes("PTY_PRIVATE_TOKEN"));
-  for (const path of [f.path, join(f.home, ".pi/communication/contacts.json"), f.unit, f.calls]) {
+  for (const path of [f.path, f.profilePath, join(f.home, ".pi/communication/bots/123456/contacts.json"), f.unit, f.calls]) {
     await assert.rejects(stat(path), { code: "ENOENT" });
   }
 });
 
-test("setup ripetuto in PTY configura solo systemd e non tocca token o rubrica", async (t) => {
+test("repeated PTY setup edits an existing profile without changing its token or contacts", async (t) => {
   const f = await fixture(t); if (!f) return;
   runSetup(f, firstSteps(f));
-  const original = await readFile(f.path, "utf8");
-  const contacts = await readFile(join(f.home, ".pi/communication/contacts.json"), "utf8");
-  const output = runSetup(f, [["Creare/abilitare soltanto il servizio systemd senza avviarlo? Scrivi sì", "sì"]]);
-  assert.match(output, /Configurazione già presente/);
-  assert.ok(!output.includes("Token BotFather"));
-  assert.equal(await readFile(f.path, "utf8"), original);
-  assert.equal(await readFile(join(f.home, ".pi/communication/contacts.json"), "utf8"), contacts);
+  const original = await readFile(f.profilePath, "utf8");
+  const contactsPath = join(f.home, ".pi/communication/bots/123456/contacts.json");
+  const contacts = await readFile(contactsPath, "utf8");
+  let choices = 0;
+  const editSteps = firstSteps(f).map(([prompt, answer]) => {
+    if (prompt === "Choice (number or cancel)" && choices++ === 0) return [prompt, "2"];
+    if (["BotFather token (hidden; Enter keeps existing): ", "Your name", "Your numeric Telegram user ID", "Profile name (optional)"].includes(prompt)) return [prompt, ""];
+    return [prompt, answer];
+  });
+  editSteps.push(["Confirm? Type yes", "yes"]); // Separate automatic-startup choice.
+  const output = runSetup(f, editSteps);
+  assert.match(output, /Already configured/);
+  assert.ok(!output.includes("PTY_PRIVATE_TOKEN"));
+  assert.equal(await readFile(f.profilePath, "utf8"), original);
+  assert.equal(await readFile(contactsPath, "utf8"), contacts);
   assert.equal((await recordedCalls(f)).length, 6);
-  const cancelled = runSetup(f, [["Creare/abilitare soltanto il servizio systemd senza avviarlo? Scrivi sì", "no"]]);
-  assert.match(cancelled, /Setup annullato/);
+  const cancelled = runSetup(f, firstSteps(f).slice(0, 2).concat([["Choice (number or cancel)", "cancel"]]));
+  assert.match(cancelled, /Setup cancelled/);
   assert.equal((await recordedCalls(f)).length, 6);
 });

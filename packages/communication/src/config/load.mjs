@@ -1,8 +1,9 @@
 import { readFile, realpath, stat } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { keys, text } from "./validation.mjs";
+import { keys, text, validateProfileName } from "./validation.mjs";
 import { validateDirectory } from "../contacts/directory.mjs";
+import { validateToolPermissions } from "./tool-permissions.mjs";
 
 const packageRoot = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -34,7 +35,7 @@ export async function loadConfiguration(configPath) {
     throw new Error("Configurazione: permessi troppo aperti; usare chmod 600");
   }
   const data = await jsonFile(configFile, "Configurazione");
-  keys(data, ["version", "telegram", "contactsFile", "sessionsDirectory", "pi"], "Configurazione");
+  keys(data, ["version", "profileName", "telegram", "contactsFile", "sessionsDirectory", "pi"], "Configurazione");
   if (data.version !== 1) throw new Error("Configurazione: versione non supportata");
   keys(data.telegram, ["botToken"], "Telegram");
   const botToken = text(data.telegram.botToken, "Token Telegram");
@@ -58,11 +59,12 @@ export async function loadConfiguration(configPath) {
   }
   let pi;
   if (data.pi !== undefined) {
-    keys(data.pi, ["sdkModule", "workingDirectory", "agentDirectory"], "Pi");
+    keys(data.pi, ["sdkModule", "workingDirectory", "agentDirectory", "permissions"], "Pi");
     pi = {
       ...(data.pi.sdkModule === undefined ? {} : { sdkModule: resolve(base, text(data.pi.sdkModule, "Modulo SDK")) }),
       workingDirectory: resolve(base, text(data.pi.workingDirectory, "Directory di lavoro pi")),
       agentDirectory: resolve(base, text(data.pi.agentDirectory, "Directory agente pi")),
+      permissions: validateToolPermissions(data.pi.permissions),
     };
     for (const path of [pi.workingDirectory, pi.agentDirectory]) {
       try { if (!(await stat(path)).isDirectory()) throw new Error(); }
@@ -70,5 +72,5 @@ export async function loadConfiguration(configPath) {
     }
   }
   const directory = validateDirectory(await jsonFile(contactsFile, "Rubrica"));
-  return { configFile, telegram: { botToken }, contactsFile, sessionsDirectory, directory, pi };
+  return { configFile, profileName: validateProfileName(data.profileName), telegram: { botToken }, contactsFile, sessionsDirectory, directory, pi };
 }

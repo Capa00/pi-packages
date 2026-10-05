@@ -1,13 +1,5 @@
 import { findEndpoint, resolveContact, resolveRecipientEndpoint } from "./directory.mjs";
 
-export function canInteract(directory, sender) {
-  return findEndpoint(directory, sender)?.endpoint.permissions.canInteractWithPi === true;
-}
-
-export function canReceive(directory, recipient) {
-  return findEndpoint(directory, recipient)?.endpoint.permissions.canReceiveMessages === true;
-}
-
 /** Controlla i permessi, non prova l'intento dell'utente: il servizio dovrà verificarlo separatamente. */
 export function authorizeRequestedSend(directory, sender, recipientQuery, requestedChannel) {
   const actor = findEndpoint(directory, sender);

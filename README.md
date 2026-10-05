@@ -18,7 +18,7 @@ Inside interactive pi, run `/communication setup`, then `/communication check` a
 
 ## Development
 
-Version `0.1.2` is prepared for npm publication and includes a native TUI setup wizard; npm `0.1.1` still uses terminal handoff. To test the checkout without changing the installed package or loading duplicate commands:
+Version `0.1.2` is prepared for npm publication and includes a native TUI setup wizard, Create/Edit selection for multiple bot profiles, and per-bot Pi file/shell tool permissions; npm `0.1.1` still uses terminal handoff. To test the checkout without changing the installed package or loading duplicate commands:
 
 ```sh
 pi --no-extensions --extension ./packages/communication/src/extension.ts

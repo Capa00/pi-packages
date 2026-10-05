@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { loadConfiguration } from "./load.mjs";
 import { keys, text } from "./validation.mjs";
 import { validateDirectory } from "../contacts/directory.mjs";
+import { validateToolPermissions } from "./tool-permissions.mjs";
 
 // Only validation errors produced by our validators are displayed. File contents,
 // parse exceptions, SDK imports, and raw filesystem errors are never exposed.
@@ -49,7 +50,8 @@ export async function checkConfiguration(configPath) {
     }
     if (!data.pi) record("Pi configuration is missing. Run /communication setup.");
     else {
-      inspect(() => keys(data.pi, ["sdkModule", "workingDirectory", "agentDirectory"], "Pi"));
+      inspect(() => keys(data.pi, ["sdkModule", "workingDirectory", "agentDirectory", "permissions"], "Pi"));
+      inspect(() => validateToolPermissions(data.pi.permissions));
       for (const [key, label, kind] of [["sdkModule", "Pi SDK entry point", "file"], ["workingDirectory", "Service workspace", "directory"], ["agentDirectory", "Pi agent directory", "directory"]]) {
         if (key === "sdkModule" && data.pi[key] === undefined) continue;
         try {

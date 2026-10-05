@@ -10,7 +10,7 @@ function harness(options = {}) {
     registerCommand(name, command) { commands.set(name, command); },
     async exec(node, args, settings) { executions.push({ node, args, settings }); return { code: 0, stdout: "Verified output", stderr: "" }; },
   };
-  registerCommunicationCommands(pi, options);
+  registerCommunicationCommands(pi, { configPath: "/tmp/test-bot/config.json", selectProfile: async (_ctx, path) => path, ...options });
   const ctx = { cwd: "/tmp/work with spaces", mode: "tui", hasUI: true, waitForIdle: async () => {}, ui: { notify(text, level) { notifications.push({ text, level }); } } };
   return { command: commands.get("communication"), executions, notifications, ctx, pi };
 }
@@ -30,7 +30,7 @@ test("service controls use the included absolute CLI without a shell or PATH loo
     assert.equal(call.args[0], fileURLToPath(new URL("../src/service/cli.mjs", import.meta.url)));
     assert.equal(call.settings.cwd, h.ctx.cwd);
   }
-  assert.deepEqual(h.executions[0].args.slice(1), ["start", "--background"]);
+  assert.deepEqual(h.executions[0].args.slice(1), ["start", "--background", "--config", "/tmp/test-bot/config.json"]);
 });
 
 test("invalid arguments cannot inject commands or token values", async () => {
@@ -87,6 +87,7 @@ test("concurrent controls are rejected", async () => {
   const pending = h.command.handler("status", h.ctx);
   await h.command.handler("stop", h.ctx);
   assert.match(h.notifications[0].text, /already running/);
+  await new Promise((resolve) => setImmediate(resolve));
   complete({ code: 0, stdout: "done", stderr: "" });
   await pending;
 });
@@ -101,6 +102,7 @@ test("raw execution errors are not exposed", async () => {
 test("invalid host paths have no implicit global fallback", () => {
   assert.equal(hostSdkPath("/nonexistent/host.js"), undefined);
   assert.equal(commandArguments("unrecognized"), undefined);
+  assert.equal(commandArguments("setup", { sdkModule: "/host/sdk.js" }), undefined);
 });
 
 test("setup-only default flags are rejected on other CLI commands", () => {

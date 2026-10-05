@@ -4,7 +4,7 @@ import { mkdtemp, readFile, writeFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { writeSetup, setupSystemd } from "../src/service/setup.mjs";
+import { prepareSetup, buildSetupDraft, saveSetup, configureStartup } from "../src/service/setup-editor.mjs";
 import { renderUnit, unitLocation, installSystemd, installedUnit, systemdStatus, controlSystemd } from "../src/service/systemd.mjs";
 
 async function fixture(t) {
@@ -12,10 +12,12 @@ async function fixture(t) {
   t.after(() => rm(home, { recursive: true, force: true }));
   const sdkModule = join(home, "sdk.mjs");
   await writeFile(sdkModule, "export const fake = true;");
-  const config = await writeSetup(join(home, ".pi/communication/config.json"), {
-    botToken: "123:TOP_SECRET", sdkModule, workingDirectory: home, agentDirectory: home,
-    id: "me", name: "Me", address: "123456789",
+  const prepared = await prepareSetup(join(home, ".pi/communication/config.json"), {
+    sdkModule, workingDirectory: home, agentDirectory: home,
   });
+  const { config } = await saveSetup(prepared, buildSetupDraft(prepared, {
+    botToken: "123:TOP_SECRET", name: "Me", address: "123456789",
+  }));
   const calls = [];
   const options = { home, platform: "linux", username: "alice", run: async (command, args) => {
     calls.push([command, args]);
@@ -48,28 +50,32 @@ test("escape systemd preserva spazi, virgolette, percentuali e dollari senza esp
   assert.throws(() => renderUnit(config, { entry: "relative.mjs" }), /percorso assoluto/);
 });
 
-test("primo setup crea unità 600, reload e enable, mai start né sudo", async (t) => {
+test("startup configuration creates a private unit, reloads and enables, never starts or runs sudo", async (t) => {
   const { config, calls, options } = await fixture(t);
-  const logs = [];
-  const result = await setupSystemd(config, { ...options, log: (line) => logs.push(line) });
-  assert.equal(result.linger, "yes");
-  assert.equal(await readFile(result.path, "utf8"), renderUnit(config));
-  if (process.platform !== "win32") assert.equal((await stat(result.path)).mode & 0o777, 0o600);
+  const result = await configureStartup(config, options);
+  const unit = unitLocation(config, options);
+  assert.equal(result.state, "enabled");
+  assert.equal(await readFile(unit.path, "utf8"), renderUnit(config));
+  if (process.platform !== "win32") assert.equal((await stat(unit.path)).mode & 0o777, 0o600);
   assert.deepEqual(calls, [
     ["systemctl", ["--user", "daemon-reload"]],
     ["systemctl", ["--user", "enable", "pi-communication.service"]],
     ["loginctl", ["show-user", "alice", "--property=Linger", "--value"]],
   ]);
-  assert.ok(logs.some((line) => line.includes("boot senza login")));
+  assert.match(result.message, /Boot startup without login is enabled/);
 });
 
-test("linger disabilitato/sconosciuto: istruzioni esplicite, niente privilegi automatici", async (t) => {
+test("disabled or unknown linger produces explicit instructions without automatic privileges", async (t) => {
   const { config, options } = await fixture(t);
   for (const response of ["no", "unknown"]) {
-    const logs = [];
-    await setupSystemd(config, { ...options, run: async (command) => command === "loginctl" ? response : "", log: (line) => logs.push(line) });
-    assert.ok(logs.some((line) => line.includes("sudo loginctl enable-linger")));
-    assert.ok(logs.some((line) => line.includes("non ancora")));
+    const calls = [];
+    const result = await configureStartup(config, { ...options, run: async (command, args) => {
+      calls.push([command, args]);
+      return command === "loginctl" ? response : "";
+    } });
+    assert.match(result.message, /sudo loginctl enable-linger/);
+    assert.match(result.message, /not enabled\/verified/);
+    assert.ok(calls.every(([command, args]) => command === "systemctl" || (command === "loginctl" && args[0] === "show-user")));
   }
 });
 

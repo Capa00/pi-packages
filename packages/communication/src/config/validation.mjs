@@ -1,3 +1,11 @@
+export function validateProfileName(value) {
+  if (value === undefined || value === "") return undefined;
+  if (typeof value !== "string" || value !== value.trim() || value.length > 80 || /[\x00-\x1f\x7f-\x9f\u2028\u2029]/.test(value)) {
+    throw new Error("Profile name: use at most 80 characters without surrounding spaces or control characters.");
+  }
+  return value;
+}
+
 export function object(value, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${label}: oggetto richiesto`);

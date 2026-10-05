@@ -1,85 +1,14 @@
-import { mkdir, open, realpath, rm, stat } from "node:fs/promises";
-import { dirname, relative, resolve, isAbsolute, sep } from "node:path";
+import { resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline/promises";
 import { Writable } from "node:stream";
-import { loadConfiguration } from "../config/load.mjs";
-import { validateDirectory } from "../contacts/directory.mjs";
-import { installSystemd } from "./systemd.mjs";
+import { toolPermissionNames } from "../config/tool-permissions.mjs";
+import { runGuidedSetup } from "./setup-flow.mjs";
+import { selectExplicitSetupProfile } from "./profiles.mjs";
+import { validateSetupUsers } from "./setup-editor.mjs";
 
 export const defaultConfigPath = () => resolve(homedir(), ".pi/communication/config.json");
-
-async function assertExternal(directory) {
-  let parent = directory;
-  for (;;) {
-    try {
-      const actual = await realpath(parent);
-      const root = await realpath(fileURLToPath(new URL("../../", import.meta.url)));
-      const diff = relative(root, actual);
-      if (diff === "" || (!isAbsolute(diff) && diff !== ".." && !diff.startsWith(`..${sep}`))) {
-        throw new Error("Setup: scegliere una directory esterna al package");
-      }
-      return;
-    } catch (error) {
-      if (error.code !== "ENOENT") throw error;
-      parent = dirname(parent);
-    }
-  }
-}
-
-export async function writeSetup(configPath, { botToken, sdkModule, workingDirectory, agentDirectory, id, name, address }) {
-  const file = resolve(configPath);
-  const base = dirname(file);
-  await assertExternal(base);
-  if (!/^[0-9]+:[A-Za-z0-9_-]+$/.test(botToken)) throw new Error("Token Telegram: formato non valido");
-  for (const path of [workingDirectory, agentDirectory]) {
-    try { if (!(await stat(path)).isDirectory()) throw new Error(); }
-    catch { throw new Error("Pi: directory non accessibile"); }
-  }
-  try { if (!(await stat(sdkModule)).isFile()) throw new Error(); }
-  catch { throw new Error("Modulo SDK: file non accessibile"); }
-  const directory = validateDirectory({ version: 1, contacts: [{ id, name, aliases: [], preferredChannel: "telegram", endpoints: [{
-    channel: "telegram", address, permissions: { canInteractWithPi: true, canReceiveMessages: true, canRequestSendMessages: true },
-  }] }] });
-  const contactsFile = resolve(base, "contacts.json");
-  if (contactsFile === file) throw new Error("Setup: configurazione e rubrica devono essere file distinti");
-  const config = { version: 1, telegram: { botToken }, pi: {
-    sdkModule: resolve(sdkModule), workingDirectory: resolve(workingDirectory), agentDirectory: resolve(agentDirectory),
-  }, contactsFile: "contacts.json", sessionsDirectory: "sessions" };
-  await mkdir(base, { recursive: true, mode: 0o700 });
-  const created = [];
-  try {
-    for (const [path, value] of [[file, config], [contactsFile, directory]]) {
-      const handle = await open(path, "wx", 0o600);
-      created.push(path);
-      try { await handle.writeFile(JSON.stringify(value, null, 2) + "\n"); }
-      finally { await handle.close(); }
-    }
-    return await loadConfiguration(file);
-  } catch {
-    for (const path of created) await rm(path, { force: true });
-    throw new Error("Setup non completato: controllare percorsi, permessi e file già esistenti. Nessun file esistente sovrascritto.");
-  }
-}
-
-export async function setupSystemd(config, options = {}) {
-  const result = await installSystemd(config, options);
-  const log = options.log ?? console.log;
-  if (!result.supported) {
-    log("Systemd non configurato: integrazione disponibile solo su Linux. Usare avvio manuale.");
-    return result;
-  }
-  log(`Unità ${result.name} creata e abilitata, ma non avviata. Log: journalctl --user -u ${result.name}`);
-  if (result.linger === "yes") {
-    log("Linger già attivo: servizio abilitato anche al boot senza login.");
-  } else {
-    log("Avvio senza login non ancora verificato/abilitato. Eseguire come amministratore:");
-    log(`sudo loginctl enable-linger ${JSON.stringify(result.username)}`);
-    log("Senza linger il servizio parte quando si avvia il gestore systemd utente, normalmente al login.");
-  }
-  return result;
-}
 
 export async function interactiveSetup(configPath, defaults = {}) {
   if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error("Setup richiede un terminale interattivo");
@@ -91,41 +20,81 @@ export async function interactiveSetup(configPath, defaults = {}) {
   const rl = createInterface({ input: process.stdin, output, terminal: true, historySize: 0 });
   const ask = async (label, fallback = "") => (await rl.question(`${label}${fallback ? ` [${fallback}]` : ""}: `)).trim() || fallback;
   try {
-    let exists = false;
-    try { await stat(configPath); exists = true; }
-    catch (error) { if (error.code !== "ENOENT") throw new Error("Setup: configurazione non accessibile"); }
-    if (exists) {
-      const config = await loadConfiguration(configPath);
-      console.log("Configurazione già presente: nessuna modifica a configurazione o rubrica.");
-      if ((await ask("Creare/abilitare soltanto il servizio systemd senza avviarlo? Scrivi sì")).toLowerCase() === "sì") {
-        await setupSystemd(config);
-      } else console.log("Setup annullato.");
-      return;
-    }
-    console.log("Configurazione locale: nessuna connessione Telegram, nessun avvio. Il contatto avrà tutti e tre i permessi.");
-    console.log("Su Linux il setup crea e abilita anche il servizio systemd utente, senza avviarlo.");
-    process.stdout.write("Token BotFather (nascosto): ");
-    muted = true;
-    let botToken;
-    try { botToken = (await rl.question("")).trim(); }
-    finally { muted = false; process.stdout.write("\n"); }
     let sdkDefault = defaults.sdkModule ?? "";
     if (!sdkDefault) {
       try { sdkDefault = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")); } catch {}
     }
+    console.log("Communication setup: create or edit a bot. No network connection or bot startup.");
     const sdkModule = await ask("Pi SDK entry point (dist/index.js)", sdkDefault);
-    const workingDirectory = await ask("Working directory", defaults.workingDirectory ?? process.cwd());
     const agentDirectory = await ask("Pi agent directory", defaults.agentDirectory ?? resolve(homedir(), ".pi/agent"));
-    const id = await ask("ID interno contatto", "me");
-    const name = await ask("Nome contatto");
-    const address = await ask("ID numerico utente Telegram (non username)");
-    console.log(`File: ${resolve(configPath)} e contacts.json nella stessa directory. Nessuna sovrascrittura.`);
-    if ((await ask("Creare i file e configurare systemd su Linux? Scrivi sì")).toLowerCase() !== "sì") {
-      console.log("Setup annullato.");
-      return;
-    }
-    const config = await writeSetup(configPath, { botToken, sdkModule, workingDirectory, agentDirectory, id, name, address });
-    console.log("Configurazione creata e validata. Avvia il bot in Telegram prima di usare il servizio.");
-    await setupSystemd(config);
+    const ctx = { ui: {
+      async select(title, choices) {
+        console.log(title);
+        choices.forEach((choice, index) => console.log(`${index + 1}. ${choice}`));
+        const value = await ask("Choice (number or cancel)");
+        if (!value || value.toLowerCase() === "cancel") return undefined;
+        if (!/^[1-9][0-9]*$/.test(value) || !choices[Number(value) - 1]) throw new Error("Setup: invalid choice.");
+        return choices[Number(value) - 1];
+      },
+      async input(title, hint) { console.log(hint); return (await ask(title)) || undefined; },
+      async confirm(title, message) { console.log(`${title}: ${message}`); return (await ask("Confirm? Type yes", "no")).toLowerCase() === "yes"; },
+    } };
+    const result = await runGuidedSetup(ctx, {
+      configPath, sdkModule, agentDirectory, workingDirectory: defaults.workingDirectory,
+      ...(defaults.directProfile ? { selectProfile: selectExplicitSetupProfile } : {}),
+      showForm: async (_ctx, current) => {
+        console.log(current.existing ? `Telegram bot ${current.botId}. Blank fields preserve existing values.` : "New Telegram bot. Its ID is derived from the token.");
+        const profileName = await ask("Profile name (optional)", current.profileName);
+        process.stdout.write("BotFather token (hidden; Enter keeps existing): ");
+        muted = true;
+        let botToken;
+        try { botToken = (await rl.question("")).trim(); }
+        finally { muted = false; process.stdout.write("\n"); }
+        const name = await ask("Your name", current.name);
+        const address = await ask("Your numeric Telegram user ID", current.address);
+        const users = structuredClone(current.users ?? []);
+        const first = { ...users[0], name, address };
+        if (users.length) users[0] = first;
+        else users.push(first);
+        for (;;) {
+          const error = validateSetupUsers(users);
+          if (error) throw new Error(`Setup: ${error}`);
+          console.log(users.map((user) => `${user.name} · ${user.address}`).join("\n"));
+          const action = await ctx.ui.select("Telegram users", ["Continue", "Add user", "Remove user"]);
+          if (action === undefined) return undefined;
+          if (action === "Continue") break;
+          if (action === "Add user") {
+            const user = { name: await ask("User name"), address: await ask("Telegram user ID") };
+            const error = validateSetupUsers([...users, user]);
+            if (error) { console.log(error); continue; }
+            users.push(user);
+          } else {
+            const labels = users.map((user) => `${user.name} · ${user.address}`);
+            const selected = await ctx.ui.select("Remove user", [...labels, "Back"]);
+            if (selected === undefined) return undefined;
+            if (selected !== "Back") {
+              if (users.length === 1) { console.log("Add another user before removing the last one."); continue; }
+              users.splice(labels.indexOf(selected), 1);
+            }
+          }
+        }
+        console.log("New users can chat, receive messages, and request confirmed sends. Existing permissions stay unchanged.");
+        for (const user of current.users ?? []) {
+          if (!users.some((item) => item.id === user.id)) console.log(`Remove user: ${user.name} · ${user.address}. Saved sessions are retained.`);
+        }
+        const permissions = {};
+        for (const field of toolPermissionNames) {
+          if (field === "executeCommands") console.log("Shell access can read/write files and access credentials. Not a sandbox or automatic root access.");
+          const value = (await ask(`Allow ${field}? Type yes/no`, current.permissions[field] ? "yes" : "no")).toLowerCase();
+          if (!["yes", "no"].includes(value)) throw new Error("Setup: permissions require yes or no.");
+          permissions[field] = value === "yes";
+        }
+        console.log(`Bot permissions: ${JSON.stringify(permissions)}. All authorized users share them; commands have no per-call approval.`);
+        if (!await ctx.ui.confirm("Save bot configuration", "Save private files and configure automatic startup for a new Linux bot? The bot will not start or restart.")) return undefined;
+        return { botToken, users, profileName, permissions };
+      },
+    });
+    console.log(result.message);
+    if (result.state === "error") throw new Error("Setup: configuration was not saved.");
   } finally { rl.close(); }
 }
